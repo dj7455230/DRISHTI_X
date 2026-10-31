@@ -114,3 +114,78 @@ def export_evaluation_report(
         headers={"Content-Disposition": "attachment; filename=drishti_x_model_evaluation_audit.json"}
     )
 
+
+# ----------------------------------------------------------------
+# Feature 41: Dataset Transparency & Inventory
+# ----------------------------------------------------------------
+@router.get("/datasets/inventory")
+def get_dataset_inventory_overview(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 41: Verified dataset metadata, manifest counts, class distributions,
+    licensing, and explicit task boundaries (APTOS=Classification, IDRiD=Segmentation).
+    """
+    from app.services.dataset_service import DatasetService
+    return DatasetService.get_dataset_inventory()
+
+
+# ----------------------------------------------------------------
+# Feature 42: Model Information & Explainability Specs
+# ----------------------------------------------------------------
+@router.get("/models/info")
+def get_models_information_overview(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 42: Roles, architectures, input/output tensors, checkpoints,
+    and verified limitations for all AI models, Grad-CAM, and Clinical Assurance.
+    """
+    from app.services.model_info_service import ModelInfoService
+    return ModelInfoService.get_models_overview()
+
+
+# ----------------------------------------------------------------
+# Feature 43: Cross-Dataset Validation Framework
+# ----------------------------------------------------------------
+@router.get("/cross-dataset/adapters")
+def list_cross_dataset_adapters(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 43: Registered cross-dataset validation adapters and supported classes.
+    """
+    from ai.evaluation.cross_dataset_adapter import get_registered_adapters
+    return get_registered_adapters()
+
+
+@router.post("/cross-dataset/validate")
+def validate_dataset_classes(
+    payload: Dict[str, Any],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 43: Validate class mapping compatibility for external cohorts.
+    Rejects incompatible grading protocols without silent data distortion.
+    """
+    from ai.evaluation.cross_dataset_adapter import ADAPTER_REGISTRY
+
+    adapter_id = payload.get("adapter_id", "messidor2")
+    adapter = ADAPTER_REGISTRY.get(adapter_id)
+    if not adapter:
+        return {
+            "is_compatible": False,
+            "error": f"Unknown or unverified dataset adapter: '{adapter_id}'. Support is not claimed without adapter verification.",
+        }
+
+    target_schema = payload.get("target_schema", {
+        0: "No DR",
+        1: "Mild NPDR",
+        2: "Moderate NPDR",
+        3: "Severe NPDR",
+        4: "Proliferative DR",
+    })
+    # Cast keys to int if passed as str
+    target_schema_int = {int(k): str(v) for k, v in target_schema.items()}
+    return adapter.validate_label_mapping(target_schema_int)
+

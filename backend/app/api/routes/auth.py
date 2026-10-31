@@ -79,6 +79,14 @@ def login(payload: LoginRequest, request: Request, response: Response,
     email_clean = payload.email.lower().strip()
     user = db.query(User).filter(User.email == email_clean).first()
     if not user or not verify_password(payload.password, user.hashed_password):
+        from app.services.audit_service import AuditService
+        AuditService.log_event(
+            db=db,
+            action="AUTH_LOGIN_FAILED",
+            user_id=user.id if user else None,
+            detail=f"Failed login attempt for email: {email_clean}",
+            ip_address=request.client.host if request.client else None,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -92,16 +100,16 @@ def login(payload: LoginRequest, request: Request, response: Response,
     user.last_login = datetime.now(timezone.utc)
     db.commit()
 
-    # Audit
-    db.add(AuditLog(
-        user_id=user.id,
+    # Audit via AuditService
+    from app.services.audit_service import AuditService
+    AuditService.log_event(
+        db=db,
         action="USER_LOGIN",
-        resource_type="user",
-        resource_id=str(user.id),
+        user_id=user.id,
         user_role=user.role.value,
+        detail=f"User authenticated: {user.email}",
         ip_address=request.client.host if request.client else None,
-    ))
-    db.commit()
+    )
 
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 
@@ -328,3 +336,69 @@ def logout(
     ))
     db.commit()
     return {"status": "ok", "message": "Successfully logged out."}
+
+
+@router.get("/permission-matrix")
+def get_permission_matrix():
+    """
+    Feature 45: Comprehensive Role-Based Access Control (RBAC) Permission Matrix.
+    """
+    return {
+        "roles": ["HEALTH_WORKER", "OPHTHALMOLOGIST", "ADMIN"],
+        "permissions": {
+            "patient_registration": {
+                "HEALTH_WORKER": True,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": True,
+                "description": "Register rural patients with de-identified demographic records.",
+            },
+            "fundus_image_upload": {
+                "HEALTH_WORKER": True,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": False,
+                "description": "Upload retinal photographs from clinic fundus cameras.",
+            },
+            "local_quality_assessment": {
+                "HEALTH_WORKER": True,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": False,
+                "description": "Run on-device image quality gate and view recapture guidance.",
+            },
+            "ai_screening_execution": {
+                "HEALTH_WORKER": True,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": False,
+                "description": "Execute EfficientNet-B0 and U-Net lesion segmentation.",
+            },
+            "telemedicine_referral_review": {
+                "HEALTH_WORKER": False,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": False,
+                "description": "Conduct specialist asynchronous review of referred cases.",
+            },
+            "clinical_diagnosis_override": {
+                "HEALTH_WORKER": False,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": False,
+                "description": "Adjudicate, confirm, or modify AI-predicted DR grade.",
+            },
+            "system_audit_trail_inspection": {
+                "HEALTH_WORKER": False,
+                "OPHTHALMOLOGIST": False,
+                "ADMIN": True,
+                "description": "Inspect cryptographically chained platform audit logs.",
+            },
+            "user_and_role_management": {
+                "HEALTH_WORKER": False,
+                "OPHTHALMOLOGIST": False,
+                "ADMIN": True,
+                "description": "Create users, disable accounts, and assign system roles.",
+            },
+            "model_metadata_configuration": {
+                "HEALTH_WORKER": False,
+                "OPHTHALMOLOGIST": True,
+                "ADMIN": True,
+                "description": "Inspect model architectures, checkpoints, and evaluation provenance.",
+            },
+        },
+    }

@@ -474,10 +474,24 @@ def get_audit_logs(
             "user_role": log.user_role,
             "detail": log.detail,
             "model_version": log.model_version,
+            "prev_event_hash": log.prev_event_hash,
+            "event_hash": log.event_hash,
             "timestamp": log.timestamp.isoformat(),
         }
         for log in logs
     ]
+
+
+@router.get("/audit/verify-chain")
+def verify_audit_chain_integrity(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    """
+    Feature 44: Tamper-evident hash chain verification endpoint.
+    """
+    from app.services.audit_service import AuditService
+    return AuditService.verify_chain(db)
 
 
 # ----------------------------------------------------------------

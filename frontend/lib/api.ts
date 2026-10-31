@@ -62,6 +62,7 @@ export const authApi = {
   googleLink: (credential: string, password: string) =>
     api.post("/api/auth/google/link", { credential, password }),
   me: () => api.get("/api/auth/me"),
+  permissionMatrix: () => api.get("/api/auth/permission-matrix"),
 }
 
 // ─── Patients ─────────────────────────────────────────────────
@@ -155,6 +156,9 @@ export const screeningsApi = {
     api.post(`/api/screenings/${id}/request-full-image`),
   recordAction: (id: string, data: object) =>
     api.post(`/api/screenings/${id}/actions`, data),
+  // Feature 50: Judge-Ready Curated Demo Scenarios
+  getDemoScenarios: () => api.get("/api/screenings/demo/scenarios"),
+  resetDemo: () => api.post("/api/screenings/demo/reset"),
 }
 
 // ─── Referrals ────────────────────────────────────────────────
@@ -169,6 +173,12 @@ export const evaluationApi = {
   generalization: () => api.get("/api/evaluation/generalization"),
   metrics: () => api.get("/api/evaluation/metrics"),
   export: () => api.get("/api/evaluation/export", { responseType: "blob" }),
+  // Features 41, 42, 43
+  inventory: () => api.get("/api/evaluation/datasets/inventory"),
+  modelsInfo: () => api.get("/api/evaluation/models/info"),
+  adapters: () => api.get("/api/evaluation/cross-dataset/adapters"),
+  validateAdapter: (payload: object) =>
+    api.post("/api/evaluation/cross-dataset/validate", payload),
 }
 
 // ─── Simulation & Discrete-Event Models ───────────────────────
@@ -189,6 +199,7 @@ export const dashboardApi = {
     api.get("/api/dashboard/referral-queue", { params }),
   models: () => api.get("/api/models"),
   audit: (params?: object) => api.get("/api/audit", { params }),
+  verifyAuditChain: () => api.get("/api/audit/verify-chain"),
   datasets: () => api.get("/api/datasets"),
 }
 

@@ -47,7 +47,7 @@ from app.schemas.screening import (
     PrioritySyncBatchRequest, PrioritySyncBatchResponse,
     ChunkUploadResponse
 )
-from app.api.deps import get_current_user, require_doctor
+from app.api.deps import get_current_user, require_doctor, get_optional_current_user
 from app.core.config import settings
 from ai.reliability.reliability_engine import evaluate_ai_reliability
 from app.api.routes.patients import generate_patient_code
@@ -76,17 +76,18 @@ def _get_screening_or_404(screening_id: uuid.UUID, db: Session) -> Screening:
 def _audit(db: Session, user_id, screening_id, action: str,
            detail: str = None, old_val=None, new_val=None,
            model_version: str = None):
-    db.add(AuditLog(
+    from app.services.audit_service import AuditService
+    AuditService.log_event(
+        db=db,
+        action=action,
         user_id=user_id,
         screening_id=screening_id,
-        action=action,
-        resource_type="screening",
-        resource_id=str(screening_id),
         detail=detail,
-        old_value=old_val,
-        new_value=new_val,
+        old_val=old_val,
+        new_val=new_val,
         model_version=model_version,
-    ))
+        commit=False,
+    )
 
 
 # ----------------------------------------------------------------
@@ -1337,7 +1338,7 @@ def get_demo_sample_images(current_user: Annotated[User, Depends(get_current_use
 @router.get("/demo/sample-image-file/{sample_key}")
 def get_demo_sample_file(
     sample_key: str,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[Optional[User], Depends(get_optional_current_user)] = None,
 ):
     from fastapi.responses import FileResponse
     import pathlib
@@ -1354,6 +1355,67 @@ def get_demo_sample_file(
 
     media_type = "image/png" if file_path.suffix.lower() == ".png" else "image/jpeg"
     return FileResponse(path=str(file_path), media_type=media_type, filename=file_path.name)
+
+
+@router.get("/demo/scenarios")
+def get_curated_demo_scenarios(current_user: Annotated[Optional[User], Depends(get_optional_current_user)] = None):
+    """
+    Feature 50: Curated judge-ready demonstration scenarios:
+    - Scenario A: Validated Workflow Example
+    - Scenario B: Evidence Mismatch Example (Discordant AI evidence)
+    - Scenario C: Poor Image Quality Example (Recapture required)
+    """
+    from app.services.demo_scenario_service import DemoScenarioService
+    return DemoScenarioService.get_curated_scenarios()
+
+
+@router.post("/demo/reset")
+def reset_demo_environment(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 50: Resets isolated demonstration records (prefix 'DEMO-' or 'PT-DEMO').
+    Strict safety rule: Never deletes or modifies real clinical patient records.
+    """
+    # 1. Find demo patients
+    demo_patients = db.query(Patient).filter(
+        (Patient.patient_code.like("DEMO-%")) | (Patient.patient_code.like("PT-DEMO%"))
+    ).all()
+    demo_patient_ids = [p.id for p in demo_patients]
+
+    deleted_screenings = 0
+    if demo_patient_ids:
+        # Find associated screenings
+        demo_screenings = db.query(Screening).filter(Screening.patient_id.in_(demo_patient_ids)).all()
+        deleted_screenings = len(demo_screenings)
+        demo_screening_ids = [s.id for s in demo_screenings]
+
+        if demo_screening_ids:
+            # Delete dependent records
+            db.query(EvidenceCapsule).filter(EvidenceCapsule.screening_id.in_(demo_screening_ids)).delete(synchronize_session=False)
+            db.query(DoctorReview).filter(DoctorReview.screening_id.in_(demo_screening_ids)).delete(synchronize_session=False)
+            db.query(Prediction).filter(Prediction.screening_id.in_(demo_screening_ids)).delete(synchronize_session=False)
+            db.query(FundusImage).filter(FundusImage.screening_id.in_(demo_screening_ids)).delete(synchronize_session=False)
+            db.query(Screening).filter(Screening.id.in_(demo_screening_ids)).delete(synchronize_session=False)
+
+        db.query(Patient).filter(Patient.id.in_(demo_patient_ids)).delete(synchronize_session=False)
+
+    _audit(
+        db,
+        user_id=current_user.id,
+        screening_id=None,
+        action="DEMO_ENVIRONMENT_RESET",
+        detail=f"Reset demo environment: {len(demo_patients)} demo patients, {deleted_screenings} demo screenings removed. Real patient records preserved.",
+    )
+    db.commit()
+
+    return {
+        "status": "RESET_COMPLETE",
+        "demo_patients_cleaned": len(demo_patients),
+        "demo_screenings_cleaned": deleted_screenings,
+        "message": "Demo environment reset successfully. Real patient records were strictly preserved.",
+    }
 
 
 # ----------------------------------------------------------------

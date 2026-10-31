@@ -46,6 +46,28 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    token: Annotated[Optional[str], Depends(oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+    drishti_session: Annotated[Optional[str], Cookie()] = None,
+) -> Optional[User]:
+    """Return the authenticated user if token/cookie provided, else None."""
+    auth_token = token or drishti_session
+    if not auth_token:
+        return None
+    try:
+        payload = decode_access_token(auth_token)
+        user_id_raw: str = payload.get("sub")
+        if user_id_raw:
+            user_uuid = uuid.UUID(user_id_raw) if isinstance(user_id_raw, str) else user_id_raw
+            user = db.query(User).filter(User.id == user_uuid).first()
+            if user and user.is_active:
+                return user
+    except Exception:
+        return None
+    return None
+
+
 def require_health_worker(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:

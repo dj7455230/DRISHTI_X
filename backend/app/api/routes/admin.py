@@ -160,10 +160,25 @@ def list_system_audit_logs(
             "new_value": log.new_value,
             "ip_address": log.ip_address,
             "model_version": log.model_version,
+            "prev_event_hash": log.prev_event_hash,
+            "event_hash": log.event_hash,
             "timestamp": log.timestamp.isoformat() if log.timestamp else None,
         }
         for log in logs
     ]
+
+
+@router.get("/audit/verify-chain")
+def verify_audit_trail_chain(
+    db: Annotated[Session, Depends(get_db)],
+    admin_user: Annotated[User, Depends(require_admin)],
+):
+    """
+    Feature 44: Cryptographic verification of the append-only audit trail hash chain.
+    Detects record tampering or deletion.
+    """
+    from app.services.audit_service import AuditService
+    return AuditService.verify_chain(db)
 
 
 @router.get("/stats")

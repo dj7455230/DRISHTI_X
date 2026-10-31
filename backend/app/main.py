@@ -133,6 +133,14 @@ async def lifespan(app: FastAPI):
                             conn.execute(text(f"ALTER TABLE screenings ADD COLUMN {col_name} {col_type}"))
                         except Exception as col_err:
                             print(f"[Startup] Migration note for screenings.{col_name}: {col_err}")
+            if "audit_logs" in tables:
+                audit_cols = {c["name"] for c in inspector.get_columns("audit_logs")}
+                for col_name, col_type in [("prev_event_hash", "VARCHAR(64) NULL"), ("event_hash", "VARCHAR(64) NULL")]:
+                    if col_name not in audit_cols:
+                        try:
+                            conn.execute(text(f"ALTER TABLE audit_logs ADD COLUMN {col_name} {col_type}"))
+                        except Exception as col_err:
+                            print(f"[Startup] Migration note for audit_logs.{col_name}: {col_err}")
     except Exception as e:
         print(f"[Startup] DB schema check note: {e}")
 

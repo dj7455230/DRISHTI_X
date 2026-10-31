@@ -31,13 +31,29 @@ import {
   X,
   Signal,
   Network,
+  Sparkles,
+  HeartHandshake,
 } from "lucide-react"
+
+const demoNavigation = [
+  {
+    href: "/demo",
+    label: "Judge Demo Portal",
+    icon: Sparkles,
+    highlight: true,
+  },
+]
 
 const clinicalNavigation = [
   {
     href: "/dashboard",
     label: "Command Dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    href: "/health-worker",
+    label: "Health Worker Mode",
+    icon: HeartHandshake,
   },
   {
     href: "/analysis",
@@ -74,6 +90,12 @@ const clinicalNavigation = [
 
 const specialistNavigation = [
   {
+    href: "/expert-mode",
+    label: "Expert Doctor Cockpit",
+    icon: Stethoscope,
+    highlight: true,
+  },
+  {
     href: "/review",
     label: "Clinical Review",
     icon: Stethoscope,
@@ -92,6 +114,16 @@ const specialistNavigation = [
 
 const systemNavigation = [
   {
+    href: "/model-lab",
+    label: "Model & Data Lab",
+    icon: FlaskConical,
+  },
+  {
+    href: "/audit",
+    label: "Cryptographic Audit",
+    icon: ClipboardList,
+  },
+  {
     href: "/reports",
     label: "Diagnostic Reports",
     icon: FileText,
@@ -100,16 +132,6 @@ const systemNavigation = [
     href: "/simulation",
     label: "Network Simulation",
     icon: Network,
-  },
-  {
-    href: "/model-lab",
-    label: "Model Validation",
-    icon: FlaskConical,
-  },
-  {
-    href: "/audit",
-    label: "Audit Trail",
-    icon: ClipboardList,
   },
   {
     href: "/settings",
@@ -152,7 +174,7 @@ function NavigationGroup({
               href={href}
               onClick={onItemClick}
               className={cn(
-                "group relative flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-200",
+                "group relative flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-200 min-h-[44px]",
                 active
                   ? "bg-[#102436] text-[#39D9D0] border border-[#39D9D0]/20 shadow-[0_0_15px_rgba(57,217,208,0.1)]"
                   : "text-[#9AAFC1] hover:bg-[#101F30] hover:text-[#F4F8FC] border border-transparent"
@@ -282,6 +304,13 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
       {/* Navigation Sections */}
       <nav className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+        <NavigationGroup
+          title="Judge & Evaluation"
+          items={demoNavigation}
+          pathname={pathname}
+          onItemClick={onMobileClose}
+        />
+
         <NavigationGroup
           title="Clinical Workspace"
           items={clinicalNavigation}
