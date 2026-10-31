@@ -3,15 +3,21 @@ DRISHTI-X — FastAPI Application Entry Point
 See the Evidence. Explain the Risk. Connect Rural India.
 """
 import os
+import secrets
+import string
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.db.base import Base, engine
 from app.api.routes import auth, patients, screenings, dashboard
-from app.api.routes import simulation, reports, referrals, admin
+from app.api.routes import simulation, reports, referrals, admin, matlab
 
 # ----------------------------------------------------------------
 # Startup / Shutdown
@@ -111,6 +117,12 @@ async def lifespan(app: FastAPI):
                     ("facility_name", "VARCHAR(200) NULL"),
                     ("operator_name", "VARCHAR(200) NULL"),
                     ("clinical_context", "JSON NULL"),
+                    ("priority_level", "VARCHAR(20) DEFAULT 'ROUTINE' NULL"),
+                    ("priority_score", "FLOAT DEFAULT 0.0 NULL"),
+                    ("priority_factors", "JSON NULL"),
+                    ("priority_rule_version", "VARCHAR(20) DEFAULT '1.0.0' NULL"),
+                    ("priority_calculated_at", "TIMESTAMP NULL"),
+                    ("case_number", "VARCHAR(50) NULL"),
                 ]
                 for col_name, col_type in screening_additions:
                     if col_name not in scr_cols:
@@ -213,6 +225,61 @@ app.include_router(simulation.router)
 app.include_router(reports.router)
 app.include_router(referrals.router)
 app.include_router(admin.router)
+app.include_router(matlab.router)
+
+
+# ----------------------------------------------------------------
+# Feature 30: Structured Failure and Error Handling
+# ----------------------------------------------------------------
+def generate_error_reference() -> str:
+    chars = string.ascii_uppercase + string.digits
+    return "ERR-" + "".join(secrets.choice(chars) for _ in range(8))
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException):
+    ref_id = generate_error_reference()
+    detail_msg = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    error_code = f"ERR_HTTP_{exc.status_code}"
+    if exc.status_code == 404:
+        error_code = "ERR_RESOURCE_NOT_FOUND"
+    elif exc.status_code == 401:
+        error_code = "ERR_UNAUTHORIZED"
+    elif exc.status_code == 403:
+        error_code = "ERR_FORBIDDEN_ROLE"
+    elif exc.status_code == 422:
+        error_code = "ERR_UNPROCESSABLE_ENTITY"
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "error_code": error_code,
+            "reference_id": ref_id,
+            "message": detail_msg,
+            "status_code": exc.status_code,
+            "retryable": exc.status_code in [408, 429, 502, 503, 504],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+        headers=getattr(exc, "headers", None)
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    ref_id = generate_error_reference()
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "error_code": "ERR_VALIDATION_FAILED",
+            "reference_id": ref_id,
+            "message": "Request payload validation failed.",
+            "status_code": 422,
+            "retryable": False,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 @app.get("/health")

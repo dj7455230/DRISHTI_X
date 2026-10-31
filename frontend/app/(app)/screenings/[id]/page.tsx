@@ -40,9 +40,11 @@ import {
   DR_GRADE_COLORS,
   DR_GRADE_LABELS,
   formatConfidence,
+  formatDate,
 } from "@/lib/utils"
 import { GradCamViewer } from "@/components/GradCamViewer"
 import LesionViewer from "@/components/LesionViewer"
+import { LiveAnalysisModal } from "@/components/LiveAnalysisModal"
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -175,6 +177,8 @@ export default function ScreeningDetailPage() {
     useState("")
   const [referralSuccessMsg, setReferralSuccessMsg] =
     useState("")
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState(false)
+  const [actionSuccessNotice, setActionSuccessNotice] = useState("")
 
   const {
     data: report,
@@ -195,6 +199,12 @@ export default function ScreeningDetailPage() {
     retry: false,
   })
 
+  const { data: reviewActionsData } = useQuery({
+    queryKey: ["screening-review-actions", id],
+    queryFn: () => screeningsApi.getReviewActions(id).then((r) => r.data).catch(() => null),
+    retry: false,
+  })
+
   const analyzeMutation = useMutation({
     mutationFn: () =>
       screeningsApi.analyze(id),
@@ -205,6 +215,26 @@ export default function ScreeningDetailPage() {
       await queryClient.invalidateQueries({
         queryKey: ["screening-report", id],
       })
+    },
+  })
+
+  const clinicalActionMutation = useMutation({
+    mutationFn: (action: "ACCEPT" | "REVIEW_FURTHER" | "REFER" | "RECAPTURE") =>
+      screeningsApi.reviewAction(id, {
+        action,
+        doctor_grade: doctorGrade,
+        notes: doctorNotes || `Doctor marked case as ${action.replace("_", " ")}`,
+        agreed_with_ai: action === "ACCEPT",
+        referral_destination: action === "REFER" ? referralFacility : undefined,
+        referral_urgency: action === "REFER" ? referralUrgency : undefined,
+        recapture_reason: action === "RECAPTURE" ? (doctorNotes || "Recapture requested by doctor") : undefined,
+      }),
+    onSuccess: async () => {
+      setActionSuccessNotice("Doctor clinical action registered in immutable audit log.")
+      setTimeout(() => setActionSuccessNotice(""), 4000)
+      await regenerateReport(id)
+      await queryClient.invalidateQueries({ queryKey: ["screening-report", id] })
+      await queryClient.invalidateQueries({ queryKey: ["screening-review-actions", id] })
     },
   })
 
@@ -371,8 +401,8 @@ export default function ScreeningDetailPage() {
 
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
 
-            <span className="font-mono text-[9px] text-[#5A7184]">
-              Case {screening.id || id}
+            <span className="font-mono text-[10px] text-teal-300 font-bold bg-teal-500/10 px-2.5 py-0.5 rounded border border-teal-500/20">
+              {screening.case_number || `DX-CASE-${(screening.id || id).slice(0, 8).toUpperCase()}`}
             </span>
 
             {patient.patient_code && (
@@ -392,6 +422,15 @@ export default function ScreeningDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsLiveModalOpen(true)}
+            className="flex items-center gap-2 rounded-full border border-teal-500/30 bg-teal-500/10 px-4 py-2 text-[10px] font-semibold text-teal-300 shadow-sm transition hover:bg-teal-500/20"
+          >
+            <Activity className="h-3.5 w-3.5" />
+            Live Pipeline Status
+          </button>
+
           <button
             type="button"
             onClick={() => window.print()}
@@ -889,9 +928,10 @@ export default function ScreeningDetailPage() {
                 {screening.status ===
                   "IMAGE_UPLOADED" && (
                   <button
-                    onClick={() =>
+                    onClick={() => {
+                      setIsLiveModalOpen(true)
                       analyzeMutation.mutate()
-                    }
+                    }}
                     disabled={
                       analyzeMutation.isPending
                     }
@@ -1492,50 +1532,120 @@ export default function ScreeningDetailPage() {
 
             </div>
 
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            {actionSuccessNotice && (
+              <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>{actionSuccessNotice}</span>
+              </div>
+            )}
 
+            <div className="mt-6 flex flex-wrap items-center gap-2.5">
               <button
-                onClick={() =>
-                  reviewMutation.mutate()
-                }
-                disabled={
-                  doctorGrade === null ||
-                  reviewMutation.isPending
-                }
-                className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#173f56] px-6 text-[11px] font-semibold text-white transition hover:bg-[#102f42] disabled:opacity-45"
+                type="button"
+                onClick={() => clinicalActionMutation.mutate("ACCEPT")}
+                disabled={clinicalActionMutation.isPending}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 text-[11px] font-bold text-white transition shadow disabled:opacity-45"
               >
-
-                {reviewMutation.isPending ? (
+                {clinicalActionMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <CheckCircle2 className="h-4 w-4" />
                 )}
-
-                Submit clinical review
-
+                Accept AI Assessment
               </button>
 
               <button
-                onClick={() =>
-                  recaptureMutation.mutate()
-                }
-                disabled={
-                  recaptureMutation.isPending
-                }
-                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-6 text-[11px] font-semibold text-amber-400 transition hover:bg-amber-500/10"
+                type="button"
+                onClick={() => clinicalActionMutation.mutate("REVIEW_FURTHER")}
+                disabled={clinicalActionMutation.isPending}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-4 text-[11px] font-bold text-white transition shadow disabled:opacity-45"
               >
+                {clinicalActionMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4" />
+                )}
+                Review Further
+              </button>
 
-                {recaptureMutation.isPending ? (
+              <button
+                type="button"
+                onClick={() => clinicalActionMutation.mutate("REFER")}
+                disabled={clinicalActionMutation.isPending}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 px-4 text-[11px] font-bold text-white transition shadow disabled:opacity-45"
+              >
+                {clinicalActionMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Escalate / Refer
+              </button>
+
+              <button
+                type="button"
+                onClick={() => clinicalActionMutation.mutate("RECAPTURE")}
+                disabled={clinicalActionMutation.isPending}
+                className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 px-4 text-[11px] font-bold text-orange-300 transition disabled:opacity-45"
+              >
+                {clinicalActionMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Camera className="h-4 w-4" />
                 )}
-
-                Request recapture
-
+                Request Recapture
               </button>
-
             </div>
+
+            {/* IMMUTABLE DOCTOR ACTION AUDIT TRAIL */}
+            {reviewActionsData?.actions && reviewActionsData.actions.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-white/10 space-y-2.5">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                  Doctor Clinical Review Audit Trail ({reviewActionsData.total})
+                </h4>
+                <div className="space-y-2">
+                  {reviewActionsData.actions.map((act: any) => (
+                    <div
+                      key={act.id}
+                      className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white">
+                            {act.doctor_name || "Ophthalmologist"}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
+                            {act.action}
+                          </span>
+                          {act.doctor_grade != null && (
+                            <span className="text-[10px] font-mono text-teal-300 bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">
+                              Dr Grade: {act.doctor_grade}
+                            </span>
+                          )}
+                          {act.agreed_with_ai && (
+                            <span className="text-[10px] text-emerald-400 font-medium">
+                              (Agreed with AI)
+                            </span>
+                          )}
+                        </div>
+                        {act.notes && (
+                          <p className="text-slate-300 text-[11px] mt-1">{act.notes}</p>
+                        )}
+                        {act.recapture_reason && (
+                          <p className="text-rose-300 text-[11px] mt-0.5">
+                            Recapture Reason: {act.recapture_reason}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                        {act.created_at ? formatDate(act.created_at) : "Recorded"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           </section>
         )}
@@ -1667,6 +1777,16 @@ export default function ScreeningDetailPage() {
           DRISHTI-X provides AI-assisted diabetic retinopathy screening support only. This result is not a definitive diagnosis and must be reviewed by a qualified eye-care professional. Model predictions and heatmaps may be incorrect. Unsuitable images may require recapture. Clinical decisions must not be based solely on this AI output.
         </p>
       </section>
+
+      {/* LIVE 11-STAGE ANALYSIS TRACKER MODAL */}
+      <LiveAnalysisModal
+        isOpen={isLiveModalOpen}
+        screeningId={id}
+        onClose={() => setIsLiveModalOpen(false)}
+        onComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ["screening-report", id] })
+        }}
+      />
 
     </div>
   )

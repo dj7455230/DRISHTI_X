@@ -207,9 +207,63 @@ class ScreeningOut(BaseModel):
     is_referable: Optional[bool] = None
     referral_priority: Optional[ReferralPriority] = None
     referral_score: Optional[float] = None
+    case_number: Optional[str] = None
+    priority_level: Optional[str] = "ROUTINE"
+    priority_score: Optional[float] = 0.0
+    priority_factors: Optional[List[Dict[str, Any]]] = None
     is_synced: bool = True
     created_at: datetime
     analyzed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ReviewActionCreate(BaseModel):
+    action: str  # ACCEPT | REVIEW_FURTHER | REFER | RECAPTURE
+    doctor_grade: Optional[int] = None
+    notes: Optional[str] = None
+    referral_destination: Optional[str] = None
+    referral_urgency: Optional[str] = "MEDIUM"
+    follow_up_date: Optional[datetime] = None
+    recapture_reason: Optional[str] = None
+    agreed_with_ai: Optional[bool] = None
+
+
+class ReviewActionOut(BaseModel):
+    id: uuid.UUID
+    screening_id: uuid.UUID
+    reviewer_id: uuid.UUID
+    action: str
+    previous_status: Optional[str]
+    new_status: str
+    doctor_grade: Optional[int] = None
+    doctor_grade_label: Optional[str] = None
+    notes: Optional[str] = None
+    referral_destination: Optional[str] = None
+    referral_urgency: Optional[str] = None
+    follow_up_date: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AnalysisJobOut(BaseModel):
+    id: uuid.UUID
+    screening_id: uuid.UUID
+    engine: str
+    status: str
+    stage: str
+    progress_percent: float
+    requested_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    execution_time_seconds: Optional[float] = None
+    retry_count: int = 0
+    max_retries: int = 3
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    error_details: Optional[Dict[str, Any]] = None
+    result_summary: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 

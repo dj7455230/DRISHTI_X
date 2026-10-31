@@ -6,7 +6,7 @@ GET /api/models
 GET /api/metrics
 GET /api/audit
 """
-from typing import Annotated, List
+from typing import Annotated, List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,7 +14,10 @@ from sqlalchemy import func
 from app.db.base import get_db
 from app.models.user import User
 from app.models.patient import Patient
-from app.models.screening import Screening, ScreeningStatus, ReferralPriority
+from app.models.screening import (
+    Screening, ScreeningStatus, ReferralPriority,
+    Prediction, FundusImage, DoctorReview, AssuranceDecision
+)
 from app.models.audit import AuditLog, ModelVersion
 from app.api.deps import get_current_user, require_admin
 
@@ -66,31 +69,259 @@ def get_statistics(
 def get_referral_queue(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    sort_by: str = Query("referral_score", enum=["referral_score", "created_at"]),
+    sort_by: str = Query("priority_score", enum=["priority_score", "referral_score", "created_at"]),
+    priority: Optional[str] = Query(None, description="CRITICAL, HIGH, MEDIUM, ROUTINE"),
+    queue_type: str = Query("review", enum=["review", "recapture", "all"]),
+    ai_grade: Optional[int] = Query(None, ge=0, le=4),
+    assurance_status: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    """Priority referral queue for ophthalmologist."""
-    query = db.query(Screening).filter(
-        Screening.is_referable == True,
-        Screening.status != ScreeningStatus.REVIEWED
-    )
-    if sort_by == "referral_score":
-        query = query.order_by(Screening.referral_score.desc().nullslast())
+    """
+    Feature 21 & 22: Dedicated Priority Referral Queue for Ophthalmologist.
+    Filters by triage priority, review vs recapture queues, AI grades, and sorts by priority score.
+    """
+    query = db.query(Screening)
+
+    # Queue type filtering
+    if queue_type == "recapture":
+        query = query.filter(Screening.status == ScreeningStatus.RECAPTURE_REQUIRED)
+    elif queue_type == "review":
+        query = query.filter(Screening.status.in_([
+            ScreeningStatus.HUMAN_REVIEW_REQUIRED,
+            ScreeningStatus.ANALYZED,
+            ScreeningStatus.PENDING,
+            ScreeningStatus.IN_REVIEW,
+            ScreeningStatus.REFERRED,
+        ]))
+
+    # Priority filtering
+    if priority:
+        query = query.filter(Screening.priority_level == priority.upper())
+
+    # Assurance decision filtering
+    if assurance_status:
+        try:
+            enum_val = AssuranceDecision(assurance_status)
+            query = query.filter(Screening.assurance_decision == enum_val)
+        except Exception:
+            pass
+
+    # AI grade filtering
+    if ai_grade is not None:
+        query = query.join(Prediction, Prediction.screening_id == Screening.id).filter(
+            Prediction.predicted_grade == ai_grade
+        )
+
+    # Sorting
+    if sort_by == "priority_score":
+        query = query.order_by(Screening.priority_score.desc().nullslast(), Screening.created_at.desc())
+    elif sort_by == "referral_score":
+        query = query.order_by(Screening.referral_score.desc().nullslast(), Screening.created_at.desc())
     else:
         query = query.order_by(Screening.created_at.desc())
 
     screenings = query.limit(limit).all()
-    return [
-        {
+
+    results = []
+    for s in screenings:
+        patient = db.query(Patient).filter(Patient.id == s.patient_id).first()
+        prediction = db.query(Prediction).filter(Prediction.screening_id == s.id).first()
+        fundus = db.query(FundusImage).filter(FundusImage.screening_id == s.id).first()
+
+        p_name = "Anonymous Patient"
+        p_code = None
+        if patient:
+            p_name = patient.name if not patient.is_anonymous else f"Patient #{patient.patient_code or str(patient.id)[:6]}"
+            p_code = patient.patient_code
+
+        results.append({
             "id": str(s.id),
+            "case_number": s.case_number or f"DX-CASE-{s.created_at.strftime('%Y%m')}-{str(s.id)[:6].upper()}",
             "patient_id": str(s.patient_id),
-            "status": s.status.value,
+            "patient_name": p_name,
+            "patient_code": p_code,
+            "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+            "eye_side": s.eye_side,
+            "priority_level": s.priority_level or "ROUTINE",
+            "priority_score": round(s.priority_score, 1) if s.priority_score is not None else 0.0,
+            "priority_factors": s.priority_factors or [],
+            "priority_rule_version": s.priority_rule_version or "1.0.0",
+            "predicted_grade": prediction.predicted_grade if prediction else None,
+            "grade_label": prediction.grade_label if prediction else None,
+            "confidence": round(prediction.confidence, 4) if prediction and prediction.confidence else None,
+            "quality_score": round(fundus.quality_score, 1) if fundus and fundus.quality_score is not None else None,
+            "is_gradable": fundus.is_gradable if fundus else False,
+            "assurance_decision": s.assurance_decision.value if s.assurance_decision else "HUMAN_REVIEW_REQUIRED",
+            "assurance_reasons": s.assurance_reasons or [],
+            "concordance_level": prediction.concordance_level if prediction else None,
+            "mismatch_detected": bool(prediction.mismatch_detected) if prediction else False,
+            "mismatch_details": prediction.mismatch_details if prediction else [],
             "referral_priority": s.referral_priority.value if s.referral_priority else None,
             "referral_score": s.referral_score,
-            "created_at": s.created_at.isoformat(),
-        }
-        for s in screenings
-    ]
+            "queue_type": "recapture" if s.status == ScreeningStatus.RECAPTURE_REQUIRED else "review",
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "analyzed_at": s.analyzed_at.isoformat() if s.analyzed_at else None,
+        })
+
+    return results
+
+
+@router.get("/ophthalmologist/dashboard")
+def get_ophthalmologist_dashboard(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    sort_by: str = Query("priority_score", enum=["priority_score", "referral_score", "created_at"]),
+    priority: Optional[str] = Query(None, description="CRITICAL, HIGH, MEDIUM, ROUTINE"),
+    queue_type: str = Query("review", enum=["review", "recapture", "all"]),
+    ai_grade: Optional[int] = Query(None, ge=0, le=4),
+    assurance_status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """
+    Feature 20 & 21: Dedicated Ophthalmologist Dashboard with Priority Referral Queue.
+    Provides complete triage metrics, pending review cases with AI evidence and mismatch alerts.
+    """
+    total_screenings = db.query(func.count(Screening.id)).scalar()
+    human_review = db.query(func.count(Screening.id)).filter(
+        Screening.status == ScreeningStatus.HUMAN_REVIEW_REQUIRED
+    ).scalar()
+    pending = db.query(func.count(Screening.id)).filter(
+        Screening.status.in_([ScreeningStatus.PENDING, ScreeningStatus.ANALYZED])
+    ).scalar()
+    critical = db.query(func.count(Screening.id)).filter(
+        (Screening.priority_level == "CRITICAL") | (Screening.referral_priority == ReferralPriority.CRITICAL)
+    ).scalar()
+    high_priority = db.query(func.count(Screening.id)).filter(
+        Screening.priority_level == "HIGH"
+    ).scalar()
+    validated = db.query(func.count(Screening.id)).filter(
+        Screening.assurance_decision == AssuranceDecision.VALIDATED
+    ).scalar()
+    recapture = db.query(func.count(Screening.id)).filter(
+        Screening.status == ScreeningStatus.RECAPTURE_REQUIRED
+    ).scalar()
+    reviewed = db.query(func.count(Screening.id)).filter(
+        Screening.status == ScreeningStatus.REVIEWED
+    ).scalar()
+    in_review = db.query(func.count(Screening.id)).filter(
+        Screening.status == ScreeningStatus.IN_REVIEW
+    ).scalar()
+    referred = db.query(func.count(Screening.id)).filter(
+        Screening.status == ScreeningStatus.REFERRED
+    ).scalar()
+
+    # Query cases using filtering
+    review_query = db.query(Screening)
+    if queue_type == "recapture":
+        review_query = review_query.filter(Screening.status == ScreeningStatus.RECAPTURE_REQUIRED)
+    elif queue_type == "review":
+        review_query = review_query.filter(
+            Screening.status.in_([
+                ScreeningStatus.HUMAN_REVIEW_REQUIRED,
+                ScreeningStatus.ANALYZED,
+                ScreeningStatus.PENDING,
+                ScreeningStatus.IN_REVIEW,
+                ScreeningStatus.REFERRED,
+            ])
+        )
+
+    if priority:
+        review_query = review_query.filter(Screening.priority_level == priority.upper())
+
+    if assurance_status:
+        try:
+            review_query = review_query.filter(Screening.assurance_decision == AssuranceDecision(assurance_status))
+        except Exception:
+            pass
+
+    if ai_grade is not None:
+        review_query = review_query.join(Prediction, Prediction.screening_id == Screening.id).filter(
+            Prediction.predicted_grade == ai_grade
+        )
+
+    if sort_by == "priority_score":
+        review_query = review_query.order_by(
+            Screening.priority_score.desc().nullslast(),
+            Screening.created_at.desc(),
+        )
+    elif sort_by == "referral_score":
+        review_query = review_query.order_by(
+            Screening.referral_score.desc().nullslast(),
+            Screening.created_at.desc(),
+        )
+    else:
+        review_query = review_query.order_by(Screening.created_at.desc())
+
+    review_cases = review_query.limit(limit).all()
+
+    cases = []
+    for s in review_cases:
+        patient = db.query(Patient).filter(Patient.id == s.patient_id).first()
+        prediction = db.query(Prediction).filter(Prediction.screening_id == s.id).first()
+        fundus = db.query(FundusImage).filter(FundusImage.screening_id == s.id).first()
+
+        p_name = "Anonymous Patient"
+        p_code = None
+        p_age = None
+        p_gender = None
+        if patient:
+            p_name = patient.name if not patient.is_anonymous else f"Patient #{patient.patient_code or str(patient.id)[:6]}"
+            p_code = patient.patient_code
+            p_age = patient.age
+            p_gender = patient.gender
+
+        cases.append({
+            "id": str(s.id),
+            "case_number": s.case_number or f"DX-CASE-{s.created_at.strftime('%Y%m')}-{str(s.id)[:6].upper()}",
+            "patient_id": str(s.patient_id),
+            "patient_name": p_name,
+            "patient_code": p_code,
+            "patient_age": p_age,
+            "patient_gender": p_gender,
+            "status": s.status.value,
+            "eye_side": s.eye_side,
+            "priority_level": s.priority_level or "ROUTINE",
+            "priority_score": round(s.priority_score, 1) if s.priority_score is not None else 0.0,
+            "priority_factors": s.priority_factors or [],
+            "priority_rule_version": s.priority_rule_version or "1.0.0",
+            "predicted_grade": prediction.predicted_grade if prediction else None,
+            "grade_label": prediction.grade_label if prediction else None,
+            "confidence": round(prediction.confidence, 4) if prediction and prediction.confidence else None,
+            "quality_score": round(fundus.quality_score, 1) if fundus and fundus.quality_score is not None else None,
+            "is_gradable": fundus.is_gradable if fundus else False,
+            "assurance_decision": s.assurance_decision.value if s.assurance_decision else "HUMAN_REVIEW_REQUIRED",
+            "assurance_reasons": s.assurance_reasons or [],
+            "concordance_level": prediction.concordance_level if prediction else None,
+            "mismatch_detected": bool(prediction.mismatch_detected) if prediction else False,
+            "mismatch_details": prediction.mismatch_details if prediction else [],
+            "referral_priority": s.referral_priority.value if s.referral_priority else "LOW",
+            "referral_score": round(s.referral_score, 1) if s.referral_score else 0.0,
+            "queue_type": "recapture" if s.status == ScreeningStatus.RECAPTURE_REQUIRED else "review",
+            "has_lesions": bool(prediction and prediction.lesion_summary),
+            "has_gradcam": bool(prediction and prediction.gradcam_path),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "analyzed_at": s.analyzed_at.isoformat() if s.analyzed_at else None,
+        })
+
+    return {
+        "metrics": {
+            "total_screenings": total_screenings,
+            "human_review_required": human_review,
+            "pending_screenings": pending,
+            "critical_cases": critical,
+            "high_priority_cases": high_priority,
+            "validated_cases": validated,
+            "recapture_required": recapture,
+            "reviewed_cases": reviewed,
+            "in_review_cases": in_review,
+            "referred_cases": referred,
+        },
+        "cases": cases,
+        "governance_notice": (
+            "DRISHTI-X Clinical Assurance: Autonomous diagnosis is disabled. "
+            "All recommendations require clinical sign-off by a certified ophthalmologist."
+        ),
+    }
 
 
 @router.get("/models")

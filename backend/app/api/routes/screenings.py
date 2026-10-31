@@ -13,6 +13,8 @@ import uuid
 import os
 import shutil
 import hashlib
+import secrets
+import string
 from datetime import datetime, timezone
 from typing import Annotated, List, Optional
 from fastapi import (APIRouter, Depends, HTTPException, UploadFile, File,
@@ -26,7 +28,8 @@ from app.models.user import User, UserRole
 from app.models.patient import Patient
 from app.models.screening import (
     Screening, FundusImage, Prediction, DoctorReview, Referral,
-    ScreeningStatus, AssuranceDecision, ReferralPriority, ReferralStatus
+    ScreeningStatus, AssuranceDecision, ReferralPriority, ReferralStatus,
+    DoctorReviewAction, AnalysisJob, JobStatus
 )
 from app.models.audit import AuditLog
 from app.schemas.screening import (
@@ -35,7 +38,8 @@ from app.schemas.screening import (
     QualityResult, PredictionOut, AssuranceResult, LesionSummary,
     QualityCheckResponse, ReferralCreate, ReferralUpdate, ReferralOut,
     SyncBatchRequest, SyncBatchResponse, SyncBatchResultItem,
-    ScreeningIntakeRequest, ScreeningIntakeResponse
+    ScreeningIntakeRequest, ScreeningIntakeResponse,
+    ReviewActionCreate, ReviewActionOut, AnalysisJobOut
 )
 from app.api.deps import get_current_user, require_doctor
 from app.core.config import settings
@@ -46,6 +50,14 @@ from datetime import date
 router = APIRouter(prefix="/api/screenings", tags=["Screenings"])
 
 UPLOAD_DIR = settings.UPLOAD_DIR
+
+
+def generate_case_number() -> str:
+    """Generate unique non-guessable case number: DX-CASE-YYYYMM-XXXXXX"""
+    now_str = datetime.now(timezone.utc).strftime("%Y%m")
+    chars = string.ascii_uppercase + string.digits
+    rand_suffix = "".join(secrets.choice(chars) for _ in range(6))
+    return f"DX-CASE-{now_str}-{rand_suffix}"
 
 
 def _get_screening_or_404(screening_id: uuid.UUID, db: Session) -> Screening:
@@ -153,6 +165,7 @@ def intake_screening(
 
         # Step 2: Create Screening Record linked to resolved Patient
         screening = Screening(
+            case_number=generate_case_number(),
             patient_id=patient.id,
             created_by=current_user.id,
             eye_side=payload.eye_side or "RIGHT",
@@ -207,6 +220,7 @@ def create_screening(
             raise HTTPException(status_code=404, detail="Patient not found.")
 
         screening = Screening(
+            case_number=generate_case_number(),
             patient_id=payload.patient_id,
             created_by=current_user.id,
             eye_side=payload.eye_side or "RIGHT",
@@ -669,15 +683,22 @@ async def analyze_screening(
             wp is not None):
         _inf_mod._service = None
 
+    # Track persistent analysis job (Features 27 & 29)
+    from app.services.analysis_job_service import AnalysisJobService
+    job = AnalysisJobService.create_or_get_job(db, screening_id, engine="PYTHON_EFFICIENTNET")
+    AnalysisJobService.update_stage(db, job.id, "MODEL_LOADING", progress_percent=50.0)
+
     from ai.inference.inference_service import get_inference_service
     service = get_inference_service(weights_path=wp)
 
     save_dir = os.path.join(UPLOAD_DIR, str(screening_id))
+    AnalysisJobService.update_stage(db, job.id, "CLASSIFICATION_INFERENCE", progress_percent=60.0)
     result = service.run_full_pipeline(
         image_path=fundus.original_path,
         screening_id=str(screening_id),
         save_dir=save_dir,
     )
+    AnalysisJobService.update_stage(db, job.id, "CLINICAL_ASSURANCE", progress_percent=95.0)
 
     # Update FundusImage quality
     quality = result.get("quality", {})
@@ -695,18 +716,31 @@ async def analyze_screening(
     }
 
     if result.get("assurance_decision") == "RECAPTURE_REQUIRED":
+        if not screening.case_number:
+            screening.case_number = generate_case_number()
         screening.status = ScreeningStatus.RECAPTURE_REQUIRED
         screening.assurance_decision = AssuranceDecision.RECAPTURE_REQUIRED
         screening.assurance_reasons = result.get("assurance_reasons", [])
+        screening.priority_level = result.get("priority_level", "ROUTINE")
+        screening.priority_score = result.get("priority_score", 0.0)
+        screening.priority_factors = result.get("priority_factors", [])
+        screening.priority_rule_version = result.get("priority_rule_version", "1.0.0")
+        screening.priority_calculated_at = datetime.now(timezone.utc)
+        AnalysisJobService.complete_job(db, job.id, result_summary={"status": "RECAPTURE_REQUIRED", "quality_score": quality.get("quality_score")})
         db.commit()
         return {
             "screening_id": str(screening_id),
+            "case_number": screening.case_number,
             "status": "RECAPTURE_REQUIRED",
             "quality": quality,
             "quality_status": quality.get("quality_status", "UNGRADABLE"),
             "quality_warnings": quality.get("quality_warnings", []),
             "recapture_guidance": quality.get("recapture_guidance", []),
             "assurance_decision": "RECAPTURE_REQUIRED",
+            "priority_level": screening.priority_level,
+            "priority_score": screening.priority_score,
+            "priority_factors": screening.priority_factors,
+            "priority_rule_version": screening.priority_rule_version,
             "reasons": result.get("assurance_reasons", []),
             "model_status": result.get("model_status"),
             "warnings": result.get("warnings", []),
@@ -750,6 +784,8 @@ async def analyze_screening(
     prediction.mismatch_details = result.get("mismatch_details")
 
     # Update screening status
+    if not screening.case_number:
+        screening.case_number = generate_case_number()
     assurance = result.get("assurance_decision", "HUMAN_REVIEW_REQUIRED")
     screening.assurance_decision = AssuranceDecision(assurance)
     screening.assurance_reasons = result.get("assurance_reasons", [])
@@ -757,6 +793,17 @@ async def analyze_screening(
     screening.referral_score = result.get("referral_score")
     if result.get("referral_priority"):
         screening.referral_priority = ReferralPriority(result["referral_priority"])
+    screening.priority_level = result.get("priority_level", "ROUTINE")
+    screening.priority_score = result.get("priority_score", 0.0)
+    screening.priority_factors = result.get("priority_factors", [])
+    screening.priority_rule_version = result.get("priority_rule_version", "1.0.0")
+    if result.get("priority_calculated_at"):
+        try:
+            screening.priority_calculated_at = datetime.fromisoformat(result["priority_calculated_at"])
+        except Exception:
+            screening.priority_calculated_at = datetime.now(timezone.utc)
+    else:
+        screening.priority_calculated_at = datetime.now(timezone.utc)
     screening.analyzed_at = datetime.now(timezone.utc)
 
     if assurance == "HUMAN_REVIEW_REQUIRED":
@@ -777,6 +824,15 @@ async def analyze_screening(
             "is_demo": result.get("is_demo"),
         },
         model_version=result.get("model_version"),
+    )
+    AnalysisJobService.complete_job(
+        db, job.id,
+        result_summary={
+            "predicted_grade": result.get("predicted_grade"),
+            "grade_label": result.get("grade_label"),
+            "priority_level": screening.priority_level,
+            "priority_score": screening.priority_score,
+        }
     )
     db.commit()
 
@@ -802,7 +858,12 @@ async def analyze_screening(
 
     return {
         "screening_id": str(screening_id),
+        "case_number": screening.case_number,
         "status": screening.status.value,
+        "priority_level": screening.priority_level,
+        "priority_score": screening.priority_score,
+        "priority_factors": screening.priority_factors,
+        "priority_rule_version": screening.priority_rule_version,
         "model_status": result.get("model_status"),
         "is_demo": result.get("is_demo"),
         "predicted_grade": result.get("predicted_grade"),
@@ -844,6 +905,23 @@ async def analyze_screening(
         "warnings": result.get("warnings", []),
         "errors": result.get("errors", []),
     }
+
+
+# ----------------------------------------------------------------
+# LIVE ANALYSIS JOB STATUS (Features 27 & 29)
+# ----------------------------------------------------------------
+@router.get("/{screening_id}/job-status")
+def get_analysis_job_status(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 29: Live 11-stage progress tracker and execution monitor.
+    """
+    _get_screening_or_404(screening_id, db)
+    from app.services.analysis_job_service import AnalysisJobService
+    return AnalysisJobService.get_job_status(db, screening_id)
 
 
 # ----------------------------------------------------------------
@@ -933,9 +1011,176 @@ def submit_doctor_review(
         old_val={"ai_grade": prediction.predicted_grade if prediction else None},
         new_val={"doctor_grade": payload.doctor_grade},
     )
+    AnalysisJobService.complete_job(
+        db, job.id,
+        result_summary={
+            "predicted_grade": result.get("predicted_grade"),
+            "grade_label": result.get("grade_label"),
+            "priority_level": screening.priority_level,
+            "priority_score": screening.priority_score,
+        }
+    )
     db.commit()
     db.refresh(review)
     return review
+
+
+# ----------------------------------------------------------------
+# DOCTOR REVIEW ACTIONS (Features 23 & 24)
+# ----------------------------------------------------------------
+@router.post("/{screening_id}/review-action", response_model=ReviewActionOut)
+def record_doctor_review_action(
+    screening_id: uuid.UUID,
+    payload: ReviewActionCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_doctor)],
+):
+    """
+    Feature 23 & 24: Ophthalmologist review actions.
+    Supports ACCEPT, REVIEW_FURTHER, REFER, RECAPTURE.
+    Auditable, non-destructive to AI predictions, and maintains full action history.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    old_status = screening.status.value if hasattr(screening.status, "value") else str(screening.status)
+
+    action_type = payload.action.upper()
+    allowed_actions = ["ACCEPT", "REVIEW_FURTHER", "REFER", "RECAPTURE"]
+    if action_type not in allowed_actions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid review action: '{payload.action}'. Allowed: {', '.join(allowed_actions)}"
+        )
+
+    dr_labels = {
+        0: "No DR", 1: "Mild NPDR", 2: "Moderate NPDR",
+        3: "Severe NPDR", 4: "Proliferative DR"
+    }
+
+    prediction = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    ai_grade = prediction.predicted_grade if prediction else None
+
+    # Handle specific action outcomes
+    if action_type == "ACCEPT":
+        new_status = ScreeningStatus.REVIEWED
+        screening.status = new_status
+
+        # Upsert DoctorReview
+        review = db.query(DoctorReview).filter(DoctorReview.screening_id == screening_id).first()
+        if not review:
+            review = DoctorReview(screening_id=screening_id, reviewer_id=current_user.id)
+            db.add(review)
+
+        grade_to_set = payload.doctor_grade if payload.doctor_grade is not None else ai_grade
+        review.doctor_grade = grade_to_set
+        review.doctor_grade_label = dr_labels.get(grade_to_set)
+        review.doctor_is_referable = (grade_to_set is not None and grade_to_set >= 2)
+        review.doctor_notes = payload.notes
+        review.ai_grade_accepted = (grade_to_set == ai_grade) if ai_grade is not None else True
+        review.ai_grade_modified = (grade_to_set != ai_grade) if (grade_to_set is not None and ai_grade is not None) else False
+        review.recapture_requested = False
+
+    elif action_type == "REVIEW_FURTHER":
+        new_status = ScreeningStatus.IN_REVIEW
+        screening.status = new_status
+
+        review = db.query(DoctorReview).filter(DoctorReview.screening_id == screening_id).first()
+        if not review:
+            review = DoctorReview(screening_id=screening_id, reviewer_id=current_user.id)
+            db.add(review)
+        if payload.notes:
+            review.doctor_notes = payload.notes
+
+    elif action_type == "REFER":
+        new_status = ScreeningStatus.REFERRED
+        screening.status = new_status
+
+        # Map urgency string to ReferralPriority enum
+        urgency_str = (payload.referral_urgency or "MEDIUM").upper()
+        try:
+            urgency_enum = ReferralPriority(urgency_str)
+        except Exception:
+            urgency_enum = ReferralPriority.MEDIUM
+
+        referral = db.query(Referral).filter(Referral.screening_id == screening_id).first()
+        if not referral:
+            referral = Referral(
+                screening_id=screening_id,
+                patient_id=screening.patient_id,
+                referred_by=current_user.id,
+                status=ReferralStatus.PENDING_REVIEW,
+                urgency=urgency_enum,
+                referred_facility=payload.referral_destination,
+                follow_up_date=payload.follow_up_date,
+                clinical_notes=payload.notes,
+            )
+            db.add(referral)
+        else:
+            referral.referred_by = current_user.id
+            referral.urgency = urgency_enum
+            referral.referred_facility = payload.referral_destination
+            referral.follow_up_date = payload.follow_up_date
+            if payload.notes:
+                referral.clinical_notes = payload.notes
+
+    elif action_type == "RECAPTURE":
+        new_status = ScreeningStatus.RECAPTURE_REQUIRED
+        screening.status = new_status
+        screening.assurance_decision = AssuranceDecision.RECAPTURE_REQUIRED
+        reason = payload.recapture_reason or payload.notes or "Doctor requested image recapture."
+        existing_reasons = screening.assurance_reasons or []
+        screening.assurance_reasons = list(existing_reasons) + [reason]
+
+        review = db.query(DoctorReview).filter(DoctorReview.screening_id == screening_id).first()
+        if not review:
+            review = DoctorReview(screening_id=screening_id, reviewer_id=current_user.id)
+            db.add(review)
+        review.recapture_requested = True
+        review.recapture_reason = reason
+        if payload.notes:
+            review.doctor_notes = payload.notes
+
+    new_status_val = new_status.value if hasattr(new_status, "value") else str(new_status)
+
+    # Create immutable audit record
+    action_record = DoctorReviewAction(
+        screening_id=screening_id,
+        reviewer_id=current_user.id,
+        action=action_type,
+        previous_status=old_status,
+        new_status=new_status_val,
+        doctor_grade=payload.doctor_grade,
+        doctor_grade_label=dr_labels.get(payload.doctor_grade),
+        notes=payload.notes,
+        referral_destination=payload.referral_destination,
+        referral_urgency=payload.referral_urgency,
+        follow_up_date=payload.follow_up_date,
+    )
+    db.add(action_record)
+
+    _audit(
+        db, current_user.id, screening_id,
+        f"DOCTOR_ACTION_{action_type}",
+        detail=f"Action: {action_type}, old_status: {old_status}, new_status: {new_status_val}, notes: {payload.notes}"
+    )
+
+    db.commit()
+    db.refresh(action_record)
+    return action_record
+
+
+@router.get("/{screening_id}/review-actions", response_model=List[ReviewActionOut])
+def get_screening_review_actions(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 23 & 24: Chronological review action history for a screening.
+    """
+    _get_screening_or_404(screening_id, db)
+    return db.query(DoctorReviewAction).filter(
+        DoctorReviewAction.screening_id == screening_id
+    ).order_by(DoctorReviewAction.created_at.asc()).all()
 
 
 # ----------------------------------------------------------------
@@ -1103,3 +1348,278 @@ def get_demo_sample_file(
 
     media_type = "image/png" if file_path.suffix.lower() == ".png" else "image/jpeg"
     return FileResponse(path=str(file_path), media_type=media_type, filename=file_path.name)
+
+
+# ----------------------------------------------------------------
+# ADVANCED RETINAL INTELLIGENCE (FEATURES 11-19)
+# ----------------------------------------------------------------
+
+@router.post("/{screening_id}/segment")
+def run_lesion_segmentation(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 11 & 12: Trigger genuine U-Net retinal lesion segmentation.
+    Generates pixel-level masks for Microaneurysms, Haemorrhages, and Hard Exudates.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    fundus = db.query(FundusImage).filter(FundusImage.screening_id == screening_id).first()
+    if not fundus or not fundus.original_path or not os.path.exists(fundus.original_path):
+        raise HTTPException(status_code=422, detail="No fundus image found on disk for segmentation.")
+
+    from ai.segmentation.lesion_segmentation_service import LesionSegmentationService
+    service = LesionSegmentationService()
+    if not service.is_available():
+        raise HTTPException(status_code=503, detail="U-Net model weights (models/weights/unet_lesion.pth) unavailable.")
+
+    save_dir = os.path.join(UPLOAD_DIR, str(screening_id))
+    try:
+        seg_res = service.segment_image(
+            image_path=fundus.original_path,
+            output_dir=save_dir,
+        )
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f"Segmentation failed: {str(ex)}")
+
+    prediction = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    if not prediction:
+        prediction = Prediction(screening_id=screening_id)
+        db.add(prediction)
+
+    prediction.lesion_summary = seg_res
+    composite_filename = seg_res.get("files", {}).get("composite_mask", "lesion_mask.png")
+    prediction.lesion_mask_path = os.path.join(save_dir, composite_filename)
+    if "lesion_evidence_score" in seg_res:
+        prediction.lesion_evidence_score = seg_res["lesion_evidence_score"]
+
+    db.commit()
+
+    return {
+        "screening_id": str(screening_id),
+        "status": "SEGMENTED",
+        "model": seg_res.get("model"),
+        "supported_classes": seg_res.get("supported_classes"),
+        "unsupported_classes": seg_res.get("unsupported_classes"),
+        "lesion_summary": seg_res,
+        "urls": {
+            "composite_mask": f"/uploads/{screening_id}/{composite_filename}",
+            "blended_overlay": f"/uploads/{screening_id}/{seg_res.get('files', {}).get('blended_overlay', 'lesion_overlay.jpg')}",
+            "microaneurysms_mask": f"/uploads/{screening_id}/mask_microaneurysm.png",
+            "hemorrhages_mask": f"/uploads/{screening_id}/mask_hemorrhage.png",
+            "hard_exudates_mask": f"/uploads/{screening_id}/mask_hard_exudate.png",
+        },
+        "disclaimer": seg_res.get("disclaimer"),
+    }
+
+
+@router.get("/{screening_id}/lesion-evidence")
+def get_lesion_evidence(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 12: Get lesion evidence map data and region measurements.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    pred = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    if not pred or not pred.lesion_summary:
+        raise HTTPException(status_code=404, detail="No lesion segmentation data available for this screening.")
+
+    summary = pred.lesion_summary
+    return {
+        "screening_id": str(screening_id),
+        "lesion_summary": summary,
+        "mask_path": pred.lesion_mask_path,
+        "urls": {
+            "composite_mask": f"/uploads/{screening_id}/lesion_mask.png",
+            "blended_overlay": f"/uploads/{screening_id}/lesion_overlay.jpg",
+            "microaneurysms_mask": f"/uploads/{screening_id}/mask_microaneurysm.png",
+            "hemorrhages_mask": f"/uploads/{screening_id}/mask_hemorrhage.png",
+            "hard_exudates_mask": f"/uploads/{screening_id}/mask_hard_exudate.png",
+        },
+        "disclaimer": summary.get("disclaimer", "Lesion candidates require clinical verification."),
+    }
+
+
+@router.post("/{screening_id}/gradcam")
+def run_gradcam_explanation(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    target_class: Optional[int] = Query(None, ge=0, le=4),
+    alpha: float = Query(0.45, ge=0.0, le=1.0),
+):
+    """
+    Feature 13: Compute real Grad-CAM explainability from EfficientNet-B0.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    fundus = db.query(FundusImage).filter(FundusImage.screening_id == screening_id).first()
+    if not fundus or not fundus.original_path or not os.path.exists(fundus.original_path):
+        raise HTTPException(status_code=422, detail="No fundus image found on disk for Grad-CAM.")
+
+    from ai.explainability.gradcam_service import GradCAMService
+    service = GradCAMService()
+    if not service.is_available():
+        raise HTTPException(status_code=503, detail="EfficientNet-B0 model weights unavailable.")
+
+    save_dir = os.path.join(UPLOAD_DIR, str(screening_id))
+    try:
+        gradcam_res = service.generate_explanation(
+            image_path=fundus.original_path,
+            output_dir=save_dir,
+            target_class=target_class,
+            alpha=alpha,
+        )
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f"Grad-CAM generation failed: {str(ex)}")
+
+    prediction = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    if prediction:
+        prediction.gradcam_path = os.path.join(save_dir, "gradcam_overlay.jpg")
+        prediction.gradcam_target_layer = gradcam_res.get("model", {}).get("target_layer", "backbone.features.8.0")
+        db.commit()
+
+    return {
+        "screening_id": str(screening_id),
+        "target_class": gradcam_res.get("target_class"),
+        "grade_label": gradcam_res.get("grade_label"),
+        "class_activation_score": gradcam_res.get("class_activation_score"),
+        "target_layer": gradcam_res.get("model", {}).get("target_layer"),
+        "blend_alpha": alpha,
+        "urls": {
+            "heatmap": f"/uploads/{screening_id}/gradcam_heatmap.jpg",
+            "overlay": f"/uploads/{screening_id}/gradcam_overlay.jpg",
+        },
+        "disclaimer": gradcam_res.get("disclaimer"),
+    }
+
+
+@router.get("/{screening_id}/explainability")
+def get_explainability(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 13 & 14: Get explainability metadata and visual artifacts.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    pred = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    fundus = db.query(FundusImage).filter(FundusImage.screening_id == screening_id).first()
+
+    save_dir = os.path.join(UPLOAD_DIR, str(screening_id))
+    has_heatmap = os.path.exists(os.path.join(save_dir, "gradcam_heatmap.jpg"))
+    has_overlay = os.path.exists(os.path.join(save_dir, "gradcam_overlay.jpg")) or os.path.exists(os.path.join(save_dir, "gradcam.jpg"))
+
+    return {
+        "screening_id": str(screening_id),
+        "available": has_overlay or has_heatmap,
+        "target_layer": pred.gradcam_target_layer if pred else "backbone.features.8.0",
+        "predicted_grade": pred.predicted_grade if pred else None,
+        "grade_label": pred.grade_label if pred else None,
+        "urls": {
+            "original": f"/uploads/{screening_id}/{os.path.basename(fundus.original_path)}" if fundus and fundus.original_path else None,
+            "heatmap": f"/uploads/{screening_id}/gradcam_heatmap.jpg" if has_heatmap else None,
+            "overlay": f"/uploads/{screening_id}/gradcam_overlay.jpg" if has_overlay else None,
+            "lesion_mask": f"/uploads/{screening_id}/lesion_mask.png" if os.path.exists(os.path.join(save_dir, "lesion_mask.png")) else None,
+            "lesion_overlay": f"/uploads/{screening_id}/lesion_overlay.jpg" if os.path.exists(os.path.join(save_dir, "lesion_overlay.jpg")) else None,
+        },
+        "disclaimer": "Grad-CAM saliency and U-Net segmentations are AI aids and require clinical verification.",
+    }
+
+
+@router.get("/{screening_id}/concordance")
+def get_evidence_concordance(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 15: Run and get Evidence Concordance evaluation.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    pred = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    if not pred:
+        raise HTTPException(status_code=404, detail="No prediction found for this screening.")
+
+    from ai.assurance.evidence_concordance_service import EvidenceConcordanceService
+    service = EvidenceConcordanceService()
+    result = service.evaluate(
+        predicted_grade=pred.predicted_grade,
+        confidence=pred.confidence or 0.8,
+        lesion_summary=pred.lesion_summary,
+    )
+    return {
+        "screening_id": str(screening_id),
+        "predicted_grade": pred.predicted_grade,
+        "grade_label": pred.grade_label,
+        **result,
+    }
+
+
+@router.get("/{screening_id}/mismatches")
+def get_grade_lesion_mismatches(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Feature 16: Check for Grade-Lesion Mismatches (MISMATCH_R01 - MISMATCH_R06).
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    pred = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    if not pred:
+        raise HTTPException(status_code=404, detail="No prediction found for this screening.")
+
+    from ai.assurance.mismatch_detection_service import MismatchDetectionService
+    service = MismatchDetectionService()
+    result = service.detect_mismatches(
+        predicted_grade=pred.predicted_grade,
+        confidence=pred.confidence or 0.8,
+        lesion_summary=pred.lesion_summary,
+        gradcam_metadata={
+            "target_class": pred.predicted_grade,
+            "class_activation_score": pred.confidence or 0.8,
+        },
+    )
+    return {
+        "screening_id": str(screening_id),
+        "predicted_grade": pred.predicted_grade,
+        **result,
+    }
+
+
+@router.get("/{screening_id}/assurance")
+def get_clinical_assurance(
+    screening_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Features 17, 18, 19: Full Clinical Assurance assessment and auditable reasons.
+    """
+    screening = _get_screening_or_404(screening_id, db)
+    pred = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
+    fundus = db.query(FundusImage).filter(FundusImage.screening_id == screening_id).first()
+
+    from ai.assurance.clinical_assurance_service import ClinicalAssuranceService
+    service = ClinicalAssuranceService()
+    result = service.evaluate(
+        predicted_grade=pred.predicted_grade if pred else None,
+        confidence=pred.confidence if pred else 0.5,
+        quality_score=fundus.quality_score if fundus and fundus.quality_score is not None else 60.0,
+        quality_details=fundus.quality_detail if fundus else {},
+        lesion_summary=pred.lesion_summary if pred else None,
+        gradcam_metadata={
+            "target_class": pred.predicted_grade if pred else None,
+            "class_activation_score": pred.confidence if pred else 0.5,
+        },
+    )
+    return {
+        "screening_id": str(screening_id),
+        **result,
+    }
+

@@ -20,6 +20,8 @@ from ai.classification.calibration import TemperatureScaler
 from ai.explainability.gradcam import generate_and_save_gradcam
 from ai.evidence.lesion_evidence import analyze_lesions
 from ai.assurance.assurance_engine import run_assurance_engine
+from ai.segmentation.lesion_segmentation_service import LesionSegmentationService
+from ai.assurance.clinical_assurance_service import ClinicalAssuranceService
 
 
 class InferenceService:
@@ -203,16 +205,28 @@ class InferenceService:
             result["gradcam_heatmap_path"] = None
 
         # ----------------------------------------------------------------
-        # STEP 5: Lesion Analysis
+        # STEP 5: Lesion Analysis (U-Net Segmentation)
         # ----------------------------------------------------------------
         lesion_mask_path = os.path.join(save_dir, "lesion_mask.jpg")
         try:
-            lesion_summary = analyze_lesions(
-                image_path=enhanced_path or image_path,
-                output_mask_path=lesion_mask_path,
-            )
-            result["lesion_summary"] = lesion_summary
-            result["lesion_mask_path"] = lesion_mask_path if os.path.exists(lesion_mask_path) else None
+            unet_service = LesionSegmentationService()
+            if unet_service.is_available():
+                seg_res = unet_service.segment_image(
+                    image_path=image_path,
+                    output_dir=save_dir,
+                )
+                result["lesion_summary"] = seg_res
+                # Save primary composite mask path
+                composite_file = seg_res.get("files", {}).get("composite_mask", "lesion_mask.png")
+                result["lesion_mask_path"] = os.path.join(save_dir, composite_file)
+                result["lesion_overlay_path"] = os.path.join(save_dir, seg_res.get("files", {}).get("blended_overlay", "lesion_overlay.jpg"))
+            else:
+                lesion_summary = analyze_lesions(
+                    image_path=enhanced_path or image_path,
+                    output_mask_path=lesion_mask_path,
+                )
+                result["lesion_summary"] = lesion_summary
+                result["lesion_mask_path"] = lesion_mask_path if os.path.exists(lesion_mask_path) else None
         except Exception as e:
             result["warnings"].append(f"Lesion analysis failed: {str(e)}")
             result["lesion_summary"] = None
@@ -221,13 +235,30 @@ class InferenceService:
         # ----------------------------------------------------------------
         # STEP 6: Evidence Concordance + Assurance Engine
         # ----------------------------------------------------------------
-        assurance = run_assurance_engine(
-            predicted_grade=predicted_grade,
-            confidence=confidence,
-            quality_score=quality["quality_score"],
-            lesion_summary=result.get("lesion_summary"),
-        )
-        result.update(assurance)
+        try:
+            assurance_svc = ClinicalAssuranceService()
+            assurance = assurance_svc.evaluate(
+                predicted_grade=predicted_grade,
+                confidence=confidence,
+                quality_score=quality["quality_score"],
+                quality_details=quality.get("detail"),
+                calibrated_confidence=confidence,
+                lesion_summary=result.get("lesion_summary"),
+                gradcam_metadata={
+                    "target_class": predicted_grade,
+                    "class_activation_score": confidence,
+                },
+            )
+            result.update(assurance)
+        except Exception as e:
+            result["warnings"].append(f"Clinical assurance evaluation fallback: {str(e)}")
+            assurance = run_assurance_engine(
+                predicted_grade=predicted_grade,
+                confidence=confidence,
+                quality_score=quality["quality_score"],
+                lesion_summary=result.get("lesion_summary"),
+            )
+            result.update(assurance)
 
         return result
 

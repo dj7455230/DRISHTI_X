@@ -112,15 +112,30 @@ class UNetLoader:
     Explicit status tracking for U-Net — mirrors EfficientNet ModelLoader.
     Status: NOT_TRAINED until unet_lesion.pth is present.
     """
+    DEFAULT_WEIGHTS = "models/weights/unet_lesion.pth"
+    CLASSES = {
+        0: "background",
+        1: "microaneurysm",
+        2: "hemorrhage",
+        3: "hard_exudate",
+    }
+    UNSUPPORTED_CLASSES = ["soft_exudate", "neovascularization"]
+
     def __init__(self, weights_path: Optional[str] = None):
-        self.weights_path = weights_path
-        self.model  = UNet(in_channels=3, out_channels=4)
+        import os
+        self.weights_path = weights_path or (
+            self.DEFAULT_WEIGHTS if os.path.exists(self.DEFAULT_WEIGHTS) else None
+        )
+        self.model = UNet(in_channels=3, out_channels=4)
         self.status = "NOT_TRAINED"
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else
             "mps"  if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else
             "cpu"
         )
+        self.model.to(self.device).eval()
+        self.epoch = None
+        self.val_loss = None
         self._try_load()
 
     def _try_load(self):
@@ -136,7 +151,9 @@ class UNetLoader:
                     self.model.load_state_dict(state_dict, strict=False)
                 self.model.to(self.device).eval()
                 self.status = ckpt.get("status", "TRAINED")
-                print(f"[UNetLoader] Loaded: {self.weights_path}  status={self.status}")
+                self.epoch = ckpt.get("epoch")
+                self.val_loss = ckpt.get("val_loss")
+                print(f"[UNetLoader] Loaded: {self.weights_path}  status={self.status} epoch={self.epoch}")
             except Exception as e:
                 print(f"[UNetLoader] WARNING: {e} — status: NOT_TRAINED")
         else:
@@ -146,11 +163,9 @@ class UNetLoader:
     def is_ready(self) -> bool:
         return self.status in ("TRAINED", "VALIDATED")
 
-    def predict_mask(self, tensor: torch.Tensor) -> torch.Tensor:
+    def predict_logits(self, tensor: torch.Tensor) -> torch.Tensor:
         """
-        Run segmentation inference.
-        Returns [1, 4, H, W] logits. Argmax gives class mask.
-        Only callable when status == TRAINED or VALIDATED.
+        Run segmentation forward pass returning raw logits [1, 4, H, W].
         """
         if not self.is_ready():
             raise RuntimeError(
@@ -160,3 +175,19 @@ class UNetLoader:
         self.model.eval()
         with torch.no_grad():
             return self.model(tensor.to(self.device))
+
+    def predict_probabilities(self, tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Run segmentation forward pass returning softmax probability maps [1, 4, H, W].
+        Channels: 0: background, 1: microaneurysm, 2: hemorrhage, 3: hard_exudate.
+        """
+        logits = self.predict_logits(tensor)
+        return F.softmax(logits, dim=1)
+
+    def predict_mask(self, tensor: torch.Tensor) -> torch.Tensor:
+        """
+        Run segmentation inference returning class index mask [1, H, W].
+        Only callable when status == TRAINED or VALIDATED.
+        """
+        probs = self.predict_probabilities(tensor)
+        return probs.argmax(dim=1)

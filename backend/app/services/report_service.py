@@ -159,6 +159,7 @@ def generate_report(
         "disclaimer":         DISCLAIMER,
         "screening": {
             "id":                 str(getattr(screening, "id", "")),
+            "case_number":        getattr(screening, "case_number", None) or f"DX-CASE-{datetime.now(timezone.utc).strftime('%Y%m')}-{str(getattr(screening, 'id', ''))[:6].upper()}",
             "patient_id":         str(getattr(screening, "patient_id", "")),
             "eye_side":           getattr(screening, "eye_side", "RIGHT") or "RIGHT",
             "screening_purpose":  getattr(screening, "screening_purpose", "ROUTINE_DR_SCREENING"),
@@ -166,6 +167,10 @@ def generate_report(
             "referral_source":    getattr(screening, "referral_source", None),
             "facility_name":      getattr(screening, "facility_name", None),
             "operator_name":      getattr(screening, "operator_name", None),
+            "priority_level":     getattr(screening, "priority_level", "ROUTINE") or "ROUTINE",
+            "priority_score":     getattr(screening, "priority_score", 0.0) or 0.0,
+            "priority_factors":   getattr(screening, "priority_factors", []) or [],
+            "priority_rule_version": getattr(screening, "priority_rule_version", "1.0.0") or "1.0.0",
             "created_at":         screening.created_at.isoformat() if getattr(screening, "created_at", None) else None,
             "analyzed_at":        screening.analyzed_at.isoformat() if getattr(screening, "analyzed_at", None) else None,
             "status":             screening.status.value if getattr(screening, "status", None) else None,

@@ -71,6 +71,11 @@ export const patientsApi = {
   list: (params?: object) => api.get("/api/patients", { params }),
   get: (id: string) => api.get(`/api/patients/${id}`),
   checkDuplicate: (data: object) => api.post("/api/patients/check-duplicate", data),
+  screenings: (id: string) => api.get(`/api/patients/${id}/screenings`),
+  compare: (id: string, screening1Id: string, screening2Id: string) =>
+    api.get(`/api/patients/${id}/compare`, {
+      params: { screening1_id: screening1Id, screening2_id: screening2Id },
+    }),
 }
 
 // ─── Screenings ───────────────────────────────────────────────
@@ -107,6 +112,21 @@ export const screeningsApi = {
     api.get(`/api/screenings/demo/sample-image-file/${sampleKey}`, {
       responseType: "blob",
     }),
+  // Advanced Features 11-19
+  segment: (id: string) => api.post(`/api/screenings/${id}/segment`),
+  getLesionEvidence: (id: string) => api.get(`/api/screenings/${id}/lesion-evidence`),
+  gradcam: (id: string, params?: object) =>
+    api.post(`/api/screenings/${id}/gradcam`, null, { params }),
+  getExplainability: (id: string) => api.get(`/api/screenings/${id}/explainability`),
+  getConcordance: (id: string) => api.get(`/api/screenings/${id}/concordance`),
+  getMismatches: (id: string) => api.get(`/api/screenings/${id}/mismatches`),
+  getAssurance: (id: string) => api.get(`/api/screenings/${id}/assurance`),
+  // Features 21-30
+  jobStatus: (id: string) => api.get(`/api/screenings/${id}/job-status`),
+  reviewAction: (id: string, data: object) =>
+    api.post(`/api/screenings/${id}/review-action`, data),
+  getReviewActions: (id: string) =>
+    api.get(`/api/screenings/${id}/review-actions`),
 }
 
 // ─── Referrals ────────────────────────────────────────────────
@@ -124,11 +144,19 @@ export const evaluationApi = {
 // ─── Dashboard ────────────────────────────────────────────────
 export const dashboardApi = {
   statistics: () => api.get("/api/dashboard/statistics"),
+  ophthalmologistDashboard: (params?: object) =>
+    api.get("/api/ophthalmologist/dashboard", { params }),
   referralQueue: (params?: object) =>
     api.get("/api/dashboard/referral-queue", { params }),
   models: () => api.get("/api/models"),
   audit: (params?: object) => api.get("/api/audit", { params }),
   datasets: () => api.get("/api/datasets"),
+}
+
+// ─── MATLAB Engine ────────────────────────────────────────────
+export const matlabApi = {
+  status: () => api.get("/api/engine/matlab/status"),
+  testConnection: () => api.post("/api/engine/matlab/test-connection"),
 }
 
 // ─── Admin Management ─────────────────────────────────────────

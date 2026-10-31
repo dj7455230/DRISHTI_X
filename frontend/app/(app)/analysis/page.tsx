@@ -7,6 +7,7 @@ import Link from "next/link"
 // framer-motion imports removed
 
 import { screeningsApi } from "@/lib/api"
+import { LiveAnalysisModal } from "@/components/LiveAnalysisModal"
 import {
   formatDate,
   DR_GRADE_LABELS,
@@ -84,6 +85,7 @@ function AnalysisWorkspaceContent() {
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState<boolean>(false)
 
   // Visualization View Mode
   const [viewMode, setViewMode] = useState<"overlay" | "split" | "compare">("overlay")
@@ -201,6 +203,17 @@ function AnalysisWorkspaceContent() {
             </select>
             <ChevronDown className="w-4 h-4 text-[#9AAFC1] absolute right-2.5 top-2.5 pointer-events-none" />
           </div>
+
+          {activeScreeningId && (
+            <button
+              type="button"
+              onClick={() => setIsLiveModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-300 text-xs font-semibold hover:bg-teal-500/20 transition"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Live Pipeline Status
+            </button>
+          )}
 
           <Link
             href="/screenings/new"
@@ -835,6 +848,14 @@ function AnalysisWorkspaceContent() {
           </div>
         </div>
       </div>
+
+      {activeScreeningId && (
+        <LiveAnalysisModal
+          isOpen={isLiveModalOpen}
+          screeningId={activeScreeningId}
+          onClose={() => setIsLiveModalOpen(false)}
+        />
+      )}
     </div>
   )
 }
