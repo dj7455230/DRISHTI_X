@@ -21,7 +21,7 @@ from training.metrics import compute_multiclass_metrics, compute_binary_metrics
 
 
 def evaluate(weights_path="models/weights/best_model.pth",
-             test_csv="datasets/test_split.csv",
+             test_csv="data/splits/aptos_test.csv",
              batch_size=16):
 
     if not os.path.exists(weights_path):
@@ -115,7 +115,7 @@ def evaluate(weights_path="models/weights/best_model.pth",
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--weights", default="models/weights/best_model.pth")
-    parser.add_argument("--test_csv", default="datasets/test_split.csv")
+    parser.add_argument("--test_csv", default="data/splits/aptos_test.csv")
     parser.add_argument("--batch_size", type=int, default=16)
     args = parser.parse_args()
     evaluate(args.weights, args.test_csv, args.batch_size)

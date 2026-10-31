@@ -75,8 +75,9 @@ class IDRiDSegDataset(Dataset):
                          glob.glob(os.path.join(folder_path, f"{prefix}*.png"))
             if not candidates:
                 continue
+            # Non-zero pixels represent the lesion
             m = np.array(Image.open(candidates[0]).convert("L").resize(
-                    (w, h), Image.NEAREST)) > 127
+                    (w, h), Image.NEAREST)) > 0
             mask[m] = class_idx
 
         return mask

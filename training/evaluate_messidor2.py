@@ -33,15 +33,10 @@ MESSIDOR_IMG = "datasets/messidor2/archive/messidor-2/messidor-2/preprocess"
 
 def remap_messidor_grade(grade: int) -> int:
     """
-    Messidor-2 uses 0-3 grading. Map to International Clinical Scale 0-4.
-    Messidor 0 → 0 (No DR)
-    Messidor 1 → 1 (Mild NPDR)
-    Messidor 2 → 2 (Moderate NPDR)
-    Messidor 3 → 4 (Proliferative DR — conservative mapping)
-    Note: This mapping is approximate. Messidor-2 does not distinguish Grade 3 (Severe).
+    Messidor-2 adjudicated CSV already adheres to the 5-point ICDR scale (0 to 4).
+    Retain the adjudicated grade directly without distortion.
     """
-    mapping = {0: 0, 1: 1, 2: 2, 3: 4}
-    return mapping.get(grade, grade)
+    return int(grade)
 
 
 class Messidor2Dataset(Dataset):

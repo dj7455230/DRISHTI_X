@@ -1,0 +1,24 @@
+{
+  "num_classes": 5,
+  "train_counts": {
+    "0": 1263,
+    "1": 259,
+    "2": 699,
+    "3": 135,
+    "4": 207
+  },
+  "smoothed_class_weights": [
+    0.496,
+    1.0952,
+    0.6667,
+    1.517,
+    1.2251
+  ],
+  "class_names": {
+    "0": "No DR",
+    "1": "Mild NPDR",
+    "2": "Moderate NPDR",
+    "3": "Severe NPDR",
+    "4": "Proliferative DR"
+  }
+}

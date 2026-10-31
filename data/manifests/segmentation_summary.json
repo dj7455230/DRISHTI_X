@@ -1,0 +1,22 @@
+{
+  "train": {
+    "total_images": 54,
+    "lesion_coverage": {
+      "MA": 54,
+      "HE": 53,
+      "EX": 54,
+      "SE": 26,
+      "OD": 54
+    }
+  },
+  "test": {
+    "total_images": 27,
+    "lesion_coverage": {
+      "MA": 27,
+      "HE": 27,
+      "EX": 27,
+      "SE": 14,
+      "OD": 27
+    }
+  }
+}

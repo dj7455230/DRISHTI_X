@@ -20,8 +20,8 @@ from ai.segmentation.unet import UNet, UNetLoader
 
 
 UNET_WEIGHTS  = "models/weights/unet_lesion.pth"
-TRAIN_IMGS    = "datasets/idrid/A. Segmentation/1. Original Images/a. Training Set"
-TRAIN_MASKS   = "datasets/idrid/A. Segmentation/2. All Segmentation Groundtruths/a. Training Set"
+TEST_IMGS     = "datasets/idrid/A. Segmentation/1. Original Images/b. Testing Set"
+TEST_MASKS    = "datasets/idrid/A. Segmentation/2. All Segmentation Groundtruths/b. Testing Set"
 CLASS_NAMES   = {0: "background", 1: "microaneurysm", 2: "hemorrhage", 3: "hard_exudate"}
 LESION_FOLDERS = {
     1: "1. Microaneurysms",
@@ -42,7 +42,7 @@ def load_combined_mask(img_name: str, mask_dir: str, size: int = 512) -> np.ndar
         if not candidates:
             continue
         m = np.array(Image.open(candidates[0]).convert("L").resize(
-            (size, size), Image.NEAREST)) > 127
+            (size, size), Image.NEAREST)) > 0
         mask[m] = cls_idx
     return mask
 
@@ -81,8 +81,8 @@ def evaluate_unet():
         print("Train U-Net first: python training/train_unet.py")
         sys.exit(1)
 
-    if not os.path.isdir(TRAIN_IMGS):
-        print(f"Dataset not found: {TRAIN_IMGS}")
+    if not os.path.isdir(TEST_IMGS):
+        print(f"Dataset not found: {TEST_IMGS}")
         sys.exit(1)
 
     loader = UNetLoader(weights_path=UNET_WEIGHTS)
@@ -93,8 +93,8 @@ def evaluate_unet():
     device = loader.device
     loader.model.eval()
 
-    img_paths = sorted(glob.glob(os.path.join(TRAIN_IMGS, "*.jpg")))
-    print(f"Evaluating on {len(img_paths)} images...")
+    img_paths = sorted(glob.glob(os.path.join(TEST_IMGS, "*.jpg")))
+    print(f"Evaluating on {len(img_paths)} independent test images...")
 
     tf = transforms.Compose([
         transforms.Resize((512, 512)),
@@ -115,7 +115,7 @@ def evaluate_unet():
 
             logits = loader.model(tensor)
             pred_mask = logits.argmax(dim=1)[0].cpu().numpy()
-            true_mask = load_combined_mask(img_name, TRAIN_MASKS, size=512)
+            true_mask = load_combined_mask(img_name, TEST_MASKS, size=512)
 
             for cls in range(1, 4):
                 per_class_dice[cls].append(dice_score(pred_mask, true_mask, cls))

@@ -12,9 +12,9 @@ model:
   image_size: 224
 
 dataset:
-  train_csv: "datasets/train_split.csv"
-  val_csv: "datasets/val_split.csv"
-  test_csv: "datasets/test_split.csv"
+  train_csv: "data/splits/aptos_train.csv"
+  val_csv: "data/splits/aptos_val.csv"
+  test_csv: "data/splits/aptos_test.csv"
   image_col: "image_path"
   label_col: "label"
   num_workers: 0            # 0 for macOS MPS stability
