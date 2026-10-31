@@ -7,9 +7,10 @@ GET  /api/patients/{id}
 import uuid
 import random
 import string
-from typing import Annotated, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated, List, Dict, Any, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 
 from app.db.base import get_db
 from app.models.patient import Patient
@@ -30,11 +31,53 @@ def generate_patient_code() -> str:
     return prefix + suffix
 
 
+@router.post("/check-duplicate")
+def check_duplicate_patient(
+    payload: Dict[str, Any],
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Search for potential duplicate patient records based on Name + Contact or Name + DOB.
+    Assists health workers in linking repeated screening visits rather than creating duplicate profiles.
+    """
+    name = payload.get("name")
+    contact = payload.get("contact_number")
+    dob = payload.get("date_of_birth")
+
+    if not name or not str(name).strip():
+        return {"is_duplicate": False, "match": None}
+
+    clean_name = str(name).strip().lower()
+    query = db.query(Patient).filter(func.lower(Patient.name) == clean_name)
+
+    if contact and str(contact).strip():
+        match = query.filter(Patient.contact_number == str(contact).strip()).first()
+        if match:
+            return {
+                "is_duplicate": True,
+                "match_reason": "MATCHING_NAME_AND_CONTACT",
+                "patient": PatientOut.model_validate(match),
+            }
+
+    if dob:
+        match = query.filter(Patient.date_of_birth == dob).first()
+        if match:
+            return {
+                "is_duplicate": True,
+                "match_reason": "MATCHING_NAME_AND_DOB",
+                "patient": PatientOut.model_validate(match),
+            }
+
+    return {"is_duplicate": False, "match": None}
+
+
 @router.post("", response_model=PatientOut, status_code=201)
 def create_patient(
     payload: PatientCreate,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    prevent_duplicate: bool = Query(False),
 ):
     """Register a new patient with complete clinical demographics and medical history."""
     try:
@@ -43,6 +86,18 @@ def create_patient(
                 status_code=422,
                 detail="Patient name is required when registration is not anonymous."
             )
+
+        # Duplicate checking if prevent_duplicate is active
+        if prevent_duplicate and not payload.is_anonymous and payload.name and payload.contact_number:
+            existing = db.query(Patient).filter(
+                func.lower(Patient.name) == payload.name.strip().lower(),
+                Patient.contact_number == payload.contact_number.strip(),
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Patient record already exists with code {existing.patient_code} for {existing.name}."
+                )
 
         code = generate_patient_code()
         # Ensure uniqueness

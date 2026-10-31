@@ -229,7 +229,9 @@ export default function DashboardPage() {
               </div>
               <div className="flex justify-between items-center text-[11px]">
                 <span className="text-[#9AAFC1]">Calibration:</span>
-                <span className="font-mono text-[#39D9D0]">T = 1.604 (Fitted)</span>
+                <span className="font-mono text-[#39D9D0]">
+                  T = {health?.temperature ? Number(health.temperature).toFixed(4) : "1.1638"} (Fitted)
+                </span>
               </div>
               <div className="flex justify-between items-center text-[11px]">
                 <span className="text-[#9AAFC1]">Lesion Segmenter:</span>

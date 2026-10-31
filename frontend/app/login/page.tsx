@@ -17,6 +17,8 @@ import {
   ScanLine,
   Stethoscope,
   Sparkles,
+  Shield,
+  UserCheck,
 } from "lucide-react"
 
 import { motion } from "framer-motion"
@@ -179,6 +181,63 @@ export default function LoginPage() {
               <span>{error}</span>
             </div>
           )}
+
+          {/* Quick Demo Role Selector */}
+          <div className="rounded-xl border border-white/10 bg-[#101F30]/60 p-3 space-y-2">
+            <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-[#9AAFC1]">
+              Demo Role Profiles (1-Click Fill)
+            </span>
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("worker@drishti.org")
+                  setPassword("worker123")
+                  if (error) setError("")
+                }}
+                className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium transition flex flex-col items-center justify-center gap-1 ${
+                  email === "worker@drishti.org"
+                    ? "border-[#39D9D0] bg-[#39D9D0]/10 text-[#39D9D0]"
+                    : "border-white/5 bg-[#0B1726] text-[#9AAFC1] hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5 text-[#39D9D0]" />
+                <span>Health Worker</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("doctor@drishti.org")
+                  setPassword("doctor123")
+                  if (error) setError("")
+                }}
+                className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium transition flex flex-col items-center justify-center gap-1 ${
+                  email === "doctor@drishti.org" || email === "testdoc@example.com"
+                    ? "border-[#7C8CFF] bg-[#7C8CFF]/10 text-[#7C8CFF]"
+                    : "border-white/5 bg-[#0B1726] text-[#9AAFC1] hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <Stethoscope className="w-3.5 h-3.5 text-[#7C8CFF]" />
+                <span>Doctor / Ophth</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("admin@drishti.org")
+                  setPassword("admin123")
+                  if (error) setError("")
+                }}
+                className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium transition flex flex-col items-center justify-center gap-1 ${
+                  email === "admin@drishti.org"
+                    ? "border-amber-400 bg-amber-400/10 text-amber-400"
+                    : "border-white/5 bg-[#0B1726] text-[#9AAFC1] hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5 text-amber-400" />
+                <span>Admin</span>
+              </button>
+            </div>
+          </div>
 
           <div className="space-y-4">
             <div>

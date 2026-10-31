@@ -46,6 +46,18 @@ def get_current_user(
     return user
 
 
+def require_health_worker(
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> User:
+    """Allow HEALTH_WORKER and ADMIN roles."""
+    if current_user.role not in (UserRole.HEALTH_WORKER, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Required role: HEALTH_WORKER or ADMIN",
+        )
+    return current_user
+
+
 def require_doctor(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
@@ -68,3 +80,16 @@ def require_admin(
             detail="Access denied. Required role: ADMIN",
         )
     return current_user
+
+
+def require_roles(*allowed_roles: UserRole):
+    """Factory dependency for arbitrary role checks."""
+    def _role_checker(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+        if current_user.role not in allowed_roles and current_user.role != UserRole.ADMIN:
+            allowed_names = [r.value for r in allowed_roles]
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Required one of: {allowed_names}",
+            )
+        return current_user
+    return _role_checker

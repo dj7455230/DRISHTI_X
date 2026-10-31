@@ -33,12 +33,17 @@ class QualityResult(BaseModel):
     quality_score: float
     focus_score: float
     illumination_score: float
+    contrast_score: Optional[float] = None
     fov_score: float
     is_gradable: bool
+    quality_category: Optional[str] = "Good"
     quality_status: Optional[str] = "GRADABLE"
     quality_warnings: List[str] = []
+    detected_issues: Optional[List[Dict[str, Any]]] = []
     recapture_guidance: List[str] = []
     feedback: str
+    quality_engine_version: Optional[str] = "2.1.0"
+    processed_at: Optional[str] = None
     detail: Dict[str, Any] = {}
 
 
@@ -47,7 +52,9 @@ class QualityCheckResponse(BaseModel):
     quality: QualityResult
     is_gradable: bool
     quality_status: str
+    quality_category: Optional[str] = "Good"
     action_required: str
+    detected_issues: Optional[List[Dict[str, Any]]] = []
     recapture_guidance: List[str] = []
 
 

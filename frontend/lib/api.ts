@@ -66,10 +66,11 @@ export const authApi = {
 
 // ─── Patients ─────────────────────────────────────────────────
 export const patientsApi = {
-  create: (data: object) => api.post("/api/patients", data),
+  create: (data: object, params?: object) => api.post("/api/patients", data, { params }),
   update: (id: string, data: object) => api.put(`/api/patients/${id}`, data),
   list: (params?: object) => api.get("/api/patients", { params }),
   get: (id: string) => api.get(`/api/patients/${id}`),
+  checkDuplicate: (data: object) => api.post("/api/patients/check-duplicate", data),
 }
 
 // ─── Screenings ───────────────────────────────────────────────
@@ -101,6 +102,11 @@ export const screeningsApi = {
     api.get("/api/screenings/feedback/export", { params: { format } }),
   getReport: (id: string) => api.get(`/api/screenings/${id}/report`),
   generateReport: (id: string) => api.post(`/api/screenings/${id}/report`),
+  getDemoSamples: () => api.get("/api/screenings/demo/sample-images"),
+  getDemoSampleBlob: (sampleKey: string) =>
+    api.get(`/api/screenings/demo/sample-image-file/${sampleKey}`, {
+      responseType: "blob",
+    }),
 }
 
 // ─── Referrals ────────────────────────────────────────────────
@@ -123,6 +129,15 @@ export const dashboardApi = {
   models: () => api.get("/api/models"),
   audit: (params?: object) => api.get("/api/audit", { params }),
   datasets: () => api.get("/api/datasets"),
+}
+
+// ─── Admin Management ─────────────────────────────────────────
+export const adminApi = {
+  users: (params?: object) => api.get("/api/admin/users", { params }),
+  createUser: (data: object) => api.post("/api/admin/users", data),
+  updateUser: (id: string, data: object) => api.patch(`/api/admin/users/${id}`, data),
+  auditLogs: (params?: object) => api.get("/api/admin/audit-logs", { params }),
+  stats: () => api.get("/api/admin/stats"),
 }
 
 // ─── Health ────────────────────────────────────────────────────

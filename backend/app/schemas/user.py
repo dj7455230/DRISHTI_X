@@ -21,6 +21,14 @@ class UserCreate(BaseModel):
         return v
 
 
+class UserUpdateAdmin(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+    facility_name: Optional[str] = None
+    facility_location: Optional[str] = None
+
+
 class UserOut(BaseModel):
     id: uuid.UUID
     email: str

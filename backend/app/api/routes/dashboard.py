@@ -99,6 +99,84 @@ def list_models(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """List all model versions. Shows real status."""
+    return get_model_status_detail(db)
+
+
+@router.get("/models/status")
+def get_models_status_endpoint(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """Detailed live status of all clinical AI models (classification & segmentation)."""
+    return get_model_status_detail(db)
+
+
+def get_model_status_detail(db: Session):
+    models = db.query(ModelVersion).all()
+    if not models:
+        try:
+            from ai.classification.model import _loader
+            import torch
+            import os
+            root = _PROJECT_ROOT
+            eff_path = root / "models/weights/best_model.pth"
+            unet_path = root / "models/weights/unet_lesion.pth"
+            cal_path = root / "models/weights/temperature.json"
+
+            eff_avail = eff_path.exists()
+            unet_avail = unet_path.exists()
+            cal_avail = cal_path.exists()
+
+            cal_temp = 1.0
+            if cal_avail:
+                try:
+                    import json
+                    with open(cal_path) as f:
+                        cal_temp = json.load(f).get("temperature", 1.0)
+                except Exception:
+                    pass
+
+            return [{
+                "model_name": "EfficientNet-B0",
+                "version": _loader.model_version if _loader else "1.0.0",
+                "architecture": "EfficientNet-B0 + Transfer Learning (timm)",
+                "status": "TRAINED" if eff_avail else "NOT_TRAINED",
+                "weights_available": eff_avail,
+                "weights_path": str(eff_path) if eff_avail else None,
+                "training_dataset": "APTOS 2019 (Verified Split)",
+                "calibrated": cal_avail,
+                "temperature": round(cal_temp, 4),
+                "is_demo": not eff_avail,
+                "metrics_note": "Evaluated on held-out test split. Check reports/evaluation_results.json.",
+            }, {
+                "model_name": "U-Net Lesion Segmentation",
+                "version": "1.0.0",
+                "architecture": "4-Stage Encoder/Decoder U-Net (4 Output Channels)",
+                "status": "TRAINED" if unet_avail else "NOT_TRAINED",
+                "weights_available": unet_avail,
+                "weights_path": str(unet_path) if unet_avail else None,
+                "training_dataset": "IDRiD Lesion Groundtruths (MA, Hemorrhage, Hard Exudate)",
+                "target_classes": ["Background", "Microaneurysm", "Hemorrhage", "Hard Exudate"],
+                "is_demo": not unet_avail,
+                "metrics_note": "Evaluated on IDRiD independent testing set.",
+            }]
+        except Exception:
+            pass
+        return [{
+            "model_name": "EfficientNet-B0",
+            "version": "0.0.0",
+            "architecture": "EfficientNet-B0 + Transfer Learning",
+            "status": "NOT_TRAINED",
+            "training_dataset": "NOT_AVAILABLE",
+            "accuracy": None,
+            "sensitivity": None,
+            "specificity": None,
+            "f1_score": None,
+            "roc_auc": None,
+            "metrics_note": "Not yet trained. Run training/train_efficientnet.py",
+        }]
+    return models
+    """List all model versions. Shows real status."""
     models = db.query(ModelVersion).all()
     if not models:
         # Read from pre-loaded model loader singleton (already loaded at startup)

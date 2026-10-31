@@ -623,7 +623,9 @@ def check_image_quality(
         "quality": quality_res,
         "is_gradable": quality_res["is_gradable"],
         "quality_status": quality_res.get("quality_status", "GRADABLE"),
+        "quality_category": quality_res.get("quality_category", "Good" if quality_res["is_gradable"] else "Poor"),
         "action_required": action_required,
+        "detected_issues": quality_res.get("detected_issues", []),
         "recapture_guidance": quality_res.get("recapture_guidance", []),
     }
 
@@ -1029,3 +1031,75 @@ def get_screening_referral(
 ):
     ref = db.query(Referral).filter(Referral.screening_id == screening_id).first()
     return ref
+
+
+# ----------------------------------------------------------------
+# PROTOTYPE DEMONSTRATION / DATASET TEST IMAGES
+# ----------------------------------------------------------------
+@router.get("/demo/sample-images")
+def get_demo_sample_images(current_user: Annotated[User, Depends(get_current_user)]):
+    """
+    Returns curated demonstration fundus images from APTOS 2019, IDRiD, and Messidor-2
+    for controlled prototype testing. Clearly marked as demonstration prototypes.
+    """
+    samples = [
+        {
+            "id": "aptos_sample_1",
+            "dataset": "APTOS 2019",
+            "image_id": "000c1434d8d7",
+            "filename": "000c1434d8d7.png",
+            "description": "APTOS 2019 Blindness Detection Test Sample",
+            "known_grade": 2,
+            "known_label": "Moderate Diabetic Retinopathy",
+            "is_demo": True,
+            "url": "/api/screenings/demo/sample-image-file/aptos_sample_1",
+        },
+        {
+            "id": "idrid_sample_1",
+            "dataset": "IDRiD",
+            "image_id": "IDRiD_001",
+            "filename": "IDRiD_001.jpg",
+            "description": "IDRiD Indian Diabetic Retinopathy Image Dataset Sample",
+            "known_grade": 3,
+            "known_label": "Severe Diabetic Retinopathy",
+            "is_demo": True,
+            "url": "/api/screenings/demo/sample-image-file/idrid_sample_1",
+        },
+        {
+            "id": "messidor2_sample_1",
+            "dataset": "Messidor-2",
+            "image_id": "20051020_43808_0100_PP",
+            "filename": "20051020_43808_0100_PP.png",
+            "description": "Messidor-2 External Validation Cohort Sample",
+            "known_grade": 0,
+            "known_label": "No Apparent Diabetic Retinopathy",
+            "is_demo": True,
+            "url": "/api/screenings/demo/sample-image-file/messidor2_sample_1",
+        },
+    ]
+    return {
+        "disclaimer": "DEMONSTRATION ONLY: Dataset images are provided for prototype testing and must not be treated as real clinical diagnoses.",
+        "samples": samples,
+    }
+
+
+@router.get("/demo/sample-image-file/{sample_key}")
+def get_demo_sample_file(
+    sample_key: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    from fastapi.responses import FileResponse
+    import pathlib
+    root = pathlib.Path(__file__).parent.parent.parent.parent.parent
+
+    path_map = {
+        "aptos_sample_1": root / "datasets/aptos2019/train_images/000c1434d8d7.png",
+        "idrid_sample_1": root / "datasets/idrid/B. Disease Grading/1. Original Images/a. Training Set/IDRiD_001.jpg",
+        "messidor2_sample_1": root / "datasets/messidor2/archive/messidor-2/messidor-2/preprocess/20051020_43808_0100_PP.png",
+    }
+    file_path = path_map.get(sample_key)
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Sample demonstration image not found.")
+
+    media_type = "image/png" if file_path.suffix.lower() == ".png" else "image/jpeg"
+    return FileResponse(path=str(file_path), media_type=media_type, filename=file_path.name)

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.db.base import Base, engine
 from app.api.routes import auth, patients, screenings, dashboard
-from app.api.routes import simulation, reports, referrals
+from app.api.routes import simulation, reports, referrals, admin
 
 # ----------------------------------------------------------------
 # Startup / Shutdown
@@ -212,6 +212,7 @@ app.include_router(dashboard.router)
 app.include_router(simulation.router)
 app.include_router(reports.router)
 app.include_router(referrals.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")
@@ -254,12 +255,24 @@ def health_check():
     except Exception:
         unet_status = "TRAINED" if unet_weights_exist else "NOT_TRAINED"
 
+    temperature_val = 1.1638
+    try:
+        temp_file = os.path.join(settings.model_weights_path, "temperature.json")
+        if os.path.exists(temp_file):
+            import json
+            with open(temp_file) as f:
+                t_data = json.load(f)
+                temperature_val = round(float(t_data.get("temperature", 1.1638)), 4)
+    except Exception:
+        pass
+
     return {
         "status":                "ok",
         "app":                   settings.APP_NAME,
         "version":               settings.APP_VERSION,
         "model_status":          live_model_status,
         "unet_status":           unet_status,
+        "temperature":           temperature_val,
         "demo_mode":             live_demo_mode,
         "weights_available":     weights_exist,
         "unet_weights_available": unet_weights_exist,

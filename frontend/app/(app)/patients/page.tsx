@@ -277,6 +277,19 @@ export default function PatientsPage() {
                     placeholder="e.g. Ramesh Kumar"
                     className="w-full rounded-xl bg-[#101F30] border border-white/10 px-3 py-2 text-white placeholder-[#5A7184] focus:outline-none focus:border-[#39D9D0]"
                   />
+                  {name.trim().length > 2 &&
+                    patients?.some(
+                      (p: any) =>
+                        p.name &&
+                        p.name.trim().toLowerCase() === name.trim().toLowerCase()
+                    ) && (
+                      <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 p-2 text-[11px] text-amber-300">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                        <span>
+                          Duplicate Notice: Patient &quot;{name.trim()}&quot; is already registered.
+                        </span>
+                      </div>
+                    )}
                 </div>
 
                 {/* Age & Gender */}

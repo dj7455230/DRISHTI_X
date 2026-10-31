@@ -246,6 +246,13 @@ function NewScreeningForm() {
   const [offlineSuccess, setOfflineSuccess] = useState<boolean>(false)
   const [isDraftSaved, setIsDraftSaved] = useState<boolean>(false)
 
+  // Acquisition mode & camera simulation state
+  const [acquisitionMode, setAcquisitionMode] = useState<"upload" | "camera">("upload")
+  const [selectedCamera, setSelectedCamera] = useState<string>("forus_3nethra")
+  const [cameraStatus, setCameraStatus] = useState<"idle" | "initializing" | "ready" | "capturing">("idle")
+  const [overrideUngradable, setOverrideUngradable] = useState<boolean>(false)
+  const [isLoadingDemo, setIsLoadingDemo] = useState<boolean>(false)
+
   // Pre-load draft from localStorage on mount
   useEffect(() => {
     try {
@@ -532,16 +539,64 @@ function NewScreeningForm() {
         // Automatically run instant quality gate check upon successful image upload
         const qcRes = await screeningsApi.qualityCheck(activeScreeningId)
         setQualityData(qcRes.data)
+        const isUngradable =
+          qcRes.data.quality_category === "Poor" ||
+          qcRes.data.quality_status === "UNGRADABLE" ||
+          qcRes.data.is_gradable === false
+        if (!isUngradable || overrideUngradable) {
+          setCurrentStep("review")
+        }
       } catch (qcErr) {
         console.warn("Quality check notification:", qcErr)
+        setCurrentStep("review")
       }
-      setCurrentStep("review")
       saveDraft()
     },
     onError: (e: any) => {
       setError(formatApiError(e, "Retinal fundus image upload failed. Please verify format and size."))
     },
   })
+
+  // Demonstration Dataset Sample Loader (Feature 3)
+  const handleLoadDemoSample = async (sampleKey: string) => {
+    setIsLoadingDemo(true)
+    setError("")
+    try {
+      const response = await screeningsApi.getDemoSampleBlob(sampleKey)
+      const blob = response.data
+      const filename =
+        sampleKey === "aptos_sample_1"
+          ? "APTOS_000c1434d8d7.png"
+          : sampleKey === "idrid_sample_1"
+          ? "IDRiD_001.jpg"
+          : "Messidor2_20051020_43808.png"
+      const file = new File([blob], filename, { type: blob.type || "image/jpeg" })
+      handleFileSelect(file)
+    } catch (e: any) {
+      setError(formatApiError(e, "Failed to load demonstration dataset sample."))
+    } finally {
+      setIsLoadingDemo(false)
+    }
+  }
+
+  // Camera Capture Simulation (Feature 4)
+  const handleSimulateCameraCapture = async () => {
+    setCameraStatus("capturing")
+    setError("")
+    try {
+      const sampleKey =
+        selectedCamera === "forus_3nethra"
+          ? "idrid_sample_1"
+          : selectedCamera === "remidio_fop"
+          ? "aptos_sample_1"
+          : "messidor2_sample_1"
+      await handleLoadDemoSample(sampleKey)
+      setCameraStatus("ready")
+    } catch (e: any) {
+      setCameraStatus("ready")
+      setError(formatApiError(e, "Camera acquisition simulation failed."))
+    }
+  }
 
   // 3. Analyze Screening Mutation
   const analyzeMutation = useMutation({
@@ -1579,95 +1634,393 @@ function NewScreeningForm() {
                 </div>
               </div>
 
-              {/* Upload Dropzone */}
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={() => document.getElementById("retina-file-input")?.click()}
-                className={cn(
-                  "group relative flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed p-6 text-center transition",
-                  imagePreview
-                    ? "border-[#3b7f83] bg-[#f8fbfb]"
-                    : "border-slate-300 bg-slate-50/50 hover:border-[#3b7f83] hover:bg-[#f8fbfb]"
-                )}
-              >
-                <input
-                  id="retina-file-input"
-                  type="file"
-                  accept="image/jpeg,image/png,image/tiff,image/bmp"
-                  onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
-                  className="hidden"
-                />
+              {/* Acquisition Mode Selector */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 p-2 border border-slate-200">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAcquisitionMode("upload")}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition",
+                      acquisitionMode === "upload"
+                        ? "bg-[#173f56] text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload from Device
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAcquisitionMode("camera")}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition",
+                      acquisitionMode === "camera"
+                        ? "bg-[#173f56] text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Camera className="h-3.5 w-3.5 text-[#39D9D0]" />
+                    Capture from Fundus Camera
+                    <span className="rounded bg-[#39D9D0]/20 px-1.5 py-0.2 text-[9px] font-mono text-[#006e68]">
+                      Simulated
+                    </span>
+                  </button>
+                </div>
 
-                {imagePreview ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="relative overflow-hidden rounded-full border-4 border-white shadow-md">
-                      <img
-                        src={imagePreview}
-                        alt="Retinal Preview"
-                        className="h-44 w-44 object-cover"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-[#142e3b]">
-                        {imageFile?.name || "Fundus Image Selected"}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        {imageFile ? `${(imageFile.size / (1024 * 1024)).toFixed(2)} MB · ${formData.eyeSide === "LEFT" ? "OS (Left Eye)" : "OD (Right Eye)"}` : "Click or drop to replace image"}
-                      </p>
-                    </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                    Prototype Datasets:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={isLoadingDemo}
+                      onClick={() => handleLoadDemoSample("aptos_sample_1")}
+                      title="APTOS 2019 Blindness Detection (Grade 2 Moderate DR)"
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#3b7f83] hover:text-[#3b7f83] transition disabled:opacity-50"
+                    >
+                      APTOS 2019
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoadingDemo}
+                      onClick={() => handleLoadDemoSample("idrid_sample_1")}
+                      title="IDRiD Indian Diabetic Retinopathy (Grade 3 Severe DR)"
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#3b7f83] hover:text-[#3b7f83] transition disabled:opacity-50"
+                    >
+                      IDRiD
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoadingDemo}
+                      onClick={() => handleLoadDemoSample("messidor2_sample_1")}
+                      title="Messidor-2 External Validation (Grade 0 No DR)"
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#3b7f83] hover:text-[#3b7f83] transition disabled:opacity-50"
+                    >
+                      Messidor-2
+                    </button>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 text-slate-500">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 group-hover:scale-105 transition">
-                      <Upload className="h-6 w-6 text-[#3b7f83]" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">
-                        Click to browse or drag & drop fundus photograph
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Supports JPEG, PNG, TIFF, BMP (up to 20MB)
-                      </p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
 
-              {/* Pre-inference Quality Gate Feedback (if already run) */}
+              {isLoadingDemo && (
+                <div className="flex items-center justify-center gap-2 rounded-2xl bg-cyan-50/70 p-3 text-xs text-cyan-800 border border-cyan-200">
+                  <Loader2 className="h-4 w-4 animate-spin text-cyan-600" />
+                  Loading authenticated prototype dataset fundus photograph...
+                </div>
+              )}
+
+              {/* Mode A: Upload Dropzone */}
+              {acquisitionMode === "upload" && (
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onClick={() => document.getElementById("retina-file-input")?.click()}
+                  className={cn(
+                    "group relative flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed p-6 text-center transition",
+                    imagePreview
+                      ? "border-[#3b7f83] bg-[#f8fbfb]"
+                      : "border-slate-300 bg-slate-50/50 hover:border-[#3b7f83] hover:bg-[#f8fbfb]"
+                  )}
+                >
+                  <input
+                    id="retina-file-input"
+                    type="file"
+                    accept="image/jpeg,image/png,image/tiff,image/bmp"
+                    onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+                    className="hidden"
+                  />
+
+                  {imagePreview ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="relative overflow-hidden rounded-full border-4 border-white shadow-md">
+                        <img
+                          src={imagePreview}
+                          alt="Retinal Preview"
+                          className="h-44 w-44 object-cover"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-[#142e3b]">
+                          {imageFile?.name || "Fundus Image Selected"}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {imageFile ? `${(imageFile.size / (1024 * 1024)).toFixed(2)} MB · ${formData.eyeSide === "LEFT" ? "OS (Left Eye)" : "OD (Right Eye)"}` : "Click or drop to replace image"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3 text-slate-500">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 group-hover:scale-105 transition">
+                        <Upload className="h-6 w-6 text-[#3b7f83]" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">
+                          Click to browse or drag & drop fundus photograph
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Supports JPEG, PNG, TIFF, BMP (up to 20MB)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Mode B: Fundus Camera Integration Placeholder */}
+              {acquisitionMode === "camera" && (
+                <div className="rounded-3xl border border-slate-200 bg-slate-900 p-6 text-white space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Camera className="h-4 w-4 text-[#39D9D0]" />
+                        <h3 className="text-sm font-bold text-white">
+                          Fundus Camera Acquisition Interface
+                        </h3>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Simulated direct camera link for clinical demonstration
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] text-slate-400 font-medium">Device:</label>
+                      <select
+                        value={selectedCamera}
+                        onChange={(e) => setSelectedCamera(e.target.value)}
+                        className="rounded-xl border border-white/15 bg-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#39D9D0]"
+                      >
+                        <option value="forus_3nethra">Forus 3nethra classic (45° Non-Mydriatic)</option>
+                        <option value="remidio_fop">Remidio Fundus on Phone (NM-10 Handheld)</option>
+                        <option value="topcon_nw400">Topcon NW400 (Robotic Fundus Camera)</option>
+                        <option value="canon_cr2">Canon CR-2 AF (Digital Retinal Camera)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Camera Viewfinder Viewport */}
+                  <div className="relative flex flex-col items-center justify-center rounded-2xl bg-black/60 border border-white/10 p-6 min-h-[220px]">
+                    {imagePreview ? (
+                      <div className="relative flex flex-col items-center gap-3">
+                        <div className="relative overflow-hidden rounded-full border-4 border-[#39D9D0]/60 shadow-[0_0_25px_rgba(57,217,208,0.3)]">
+                          <img
+                            src={imagePreview}
+                            alt="Camera Viewfinder Retinal Capture"
+                            className="h-44 w-44 object-cover"
+                          />
+                          {/* Reticle Overlay */}
+                          <div className="absolute inset-0 pointer-events-none flex items-center justify-center border-2 border-dashed border-[#39D9D0]/40 rounded-full">
+                            <div className="h-2 w-2 rounded-full bg-[#39D9D0]/80" />
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-0.5 text-[10px] font-mono text-emerald-300 border border-emerald-500/30">
+                            <CheckCircle2 className="h-3 w-3" /> Acquisition Captured ({formData.eyeSide === "LEFT" ? "OS" : "OD"})
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-center space-y-3">
+                        <div className="relative flex h-20 w-20 items-center justify-center rounded-full border-2 border-dashed border-white/20">
+                          <Camera className="h-8 w-8 text-[#39D9D0]" />
+                          <div className="absolute inset-0 rounded-full border border-[#39D9D0]/30 animate-ping" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-white">
+                            Optical Retinal Viewfinder Ready
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-1 max-w-[320px]">
+                            Align patient pupil with fixation target. Verify 45° field centering on macula and optic nerve head.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Camera Controls */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <p className="text-[10px] text-slate-400 max-w-[380px] leading-relaxed">
+                      <span className="font-semibold text-slate-300">Notice:</span> Camera interface simulated for prototype demonstration. Direct hardware integration via DICOM / USB capture is a planned production feature.
+                    </p>
+
+                    <div className="flex items-center gap-2">
+                      {imagePreview && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImageFile(null)
+                            setImagePreview(null)
+                            setQualityData(null)
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition"
+                        >
+                          <RefreshCcw className="h-3.5 w-3.5" />
+                          Retake
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={cameraStatus === "capturing"}
+                        onClick={handleSimulateCameraCapture}
+                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#39D9D0] to-[#2BA8A1] px-4 py-2 text-xs font-bold text-[#07111F] shadow-[0_0_15px_rgba(57,217,208,0.25)] hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50"
+                      >
+                        {cameraStatus === "capturing" ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Acquiring Exposure...
+                          </>
+                        ) : (
+                          <>
+                            <Camera className="h-3.5 w-3.5" />
+                            {imagePreview ? "Re-Acquire Image" : "Trigger Camera Capture"}
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Enhanced Quality Gate Assessment Card (Features 7 & 8) */}
               {qualityData && (
                 <div
                   className={cn(
-                    "rounded-2xl border p-4 text-xs space-y-2",
-                    qualityData.is_gradable
-                      ? "border-emerald-200 bg-emerald-50/70 text-emerald-900"
-                      : "border-amber-300 bg-amber-50/80 text-amber-950"
+                    "rounded-3xl border p-5 text-xs space-y-4 transition shadow-sm",
+                    qualityData.quality_category === "Poor" || qualityData.quality_status === "UNGRADABLE" || !qualityData.is_gradable
+                      ? "border-rose-300 bg-rose-50/70 text-rose-950"
+                      : qualityData.quality_category === "Borderline" || qualityData.quality_status === "BORDERLINE"
+                      ? "border-amber-300 bg-amber-50/70 text-amber-950"
+                      : "border-emerald-200 bg-emerald-50/70 text-emerald-950"
                   )}
                 >
-                  <div className="flex items-center justify-between font-bold">
-                    <span className="flex items-center gap-1.5">
-                      <ShieldCheck className="h-4 w-4 text-emerald-700" />
-                      Image Quality Gate Assessment
-                    </span>
-                    <span className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-mono border">
-                      {qualityData.quality_status || (qualityData.is_gradable ? "GRADABLE" : "UNGRADABLE")}
-                    </span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-slate-700">
-                    {qualityData.quality?.feedback || "Image sharpness, illumination, and retinal vessel visibility evaluated."}
-                  </p>
-                  {!qualityData.is_gradable && (
-                    <div className="border-t border-amber-200/60 pt-2 flex items-center justify-between">
-                      <span className="text-[11px] text-amber-800 font-medium">
-                        Quality score is below clinical threshold. Recapture is strongly recommended.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => document.getElementById("retina-file-input")?.click()}
-                        className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-amber-700"
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/5 pb-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck
+                        className={cn(
+                          "h-5 w-5",
+                          qualityData.quality_category === "Poor" || !qualityData.is_gradable
+                            ? "text-rose-600"
+                            : qualityData.quality_category === "Borderline"
+                            ? "text-amber-600"
+                            : "text-emerald-600"
+                        )}
+                      />
+                      <div>
+                        <h4 className="font-bold text-sm">
+                          Automated Image Quality Assessment
+                        </h4>
+                        <p className="text-[11px] opacity-80">
+                          Pre-inference quality assurance gate
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-black font-mono tracking-wider border shadow-sm",
+                          qualityData.quality_category === "Poor" || !qualityData.is_gradable
+                            ? "bg-rose-600 text-white border-rose-700"
+                            : qualityData.quality_category === "Borderline"
+                            ? "bg-amber-500 text-white border-amber-600"
+                            : "bg-emerald-600 text-white border-emerald-700"
+                        )}
                       >
-                        Recapture
-                      </button>
+                        {qualityData.quality_category?.toUpperCase() || (qualityData.is_gradable ? "GOOD" : "POOR")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4 Core Quality Metrics */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    <div className="rounded-xl bg-white/80 p-2.5 border border-black/5">
+                      <span className="text-[10px] font-semibold text-slate-500 block">Focus / Sharpness</span>
+                      <span className="text-sm font-bold text-slate-800">
+                        {typeof qualityData.blur_score === "number" ? qualityData.blur_score.toFixed(1) : qualityData.quality?.blur_score?.toFixed(1) || "N/A"}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-white/80 p-2.5 border border-black/5">
+                      <span className="text-[10px] font-semibold text-slate-500 block">Illumination</span>
+                      <span className="text-sm font-bold text-slate-800">
+                        {typeof qualityData.illumination_score === "number" ? qualityData.illumination_score.toFixed(1) : qualityData.quality?.illumination_score?.toFixed(1) || "N/A"}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-white/80 p-2.5 border border-black/5">
+                      <span className="text-[10px] font-semibold text-slate-500 block">Contrast</span>
+                      <span className="text-sm font-bold text-slate-800">
+                        {typeof qualityData.contrast_score === "number" ? qualityData.contrast_score.toFixed(1) : qualityData.quality?.contrast_score?.toFixed(1) || "N/A"}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-white/80 p-2.5 border border-black/5">
+                      <span className="text-[10px] font-semibold text-slate-500 block">FOV Centering</span>
+                      <span className="text-sm font-bold text-slate-800">
+                        {typeof qualityData.fov_score === "number" ? qualityData.fov_score.toFixed(1) : qualityData.quality?.fov_score?.toFixed(1) || "N/A"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Smart Recapture Guidance (Detected Issues) */}
+                  {Array.isArray(qualityData.detected_issues) && qualityData.detected_issues.length > 0 && (
+                    <div className="rounded-2xl bg-white/90 p-3.5 border border-black/5 space-y-2">
+                      <p className="font-bold text-xs flex items-center gap-1.5 text-slate-800">
+                        <AlertTriangle className="h-4 w-4 text-amber-500" />
+                        Smart Recapture Guidance & Corrective Steps
+                      </p>
+                      <div className="space-y-2">
+                        {qualityData.detected_issues.map((issue: any, idx: number) => (
+                          <div key={idx} className="rounded-xl bg-slate-50 p-2.5 text-[11px] border border-slate-100">
+                            <p className="font-bold text-slate-900">{issue.title}</p>
+                            <p className="text-slate-600 mt-0.5">{issue.reason}</p>
+                            {issue.recommendation && (
+                              <p className="text-[#006e68] font-medium mt-1">
+                                Action: {issue.recommendation}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quality Ungradable Gating & Recapture Action */}
+                  {(qualityData.quality_category === "Poor" || qualityData.quality_status === "UNGRADABLE" || !qualityData.is_gradable) && (
+                    <div className="rounded-2xl border border-rose-300 bg-rose-100/70 p-3.5 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-rose-900 text-xs">
+                            Screening Safety Gate: Image Quality is Ungradable
+                          </p>
+                          <p className="text-[11px] text-rose-800 mt-0.5 leading-relaxed">
+                            Retinal landmarks are obscured. Automated DR classification requires a gradable image with sharp vascular resolution to prevent false negatives.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImageFile(null)
+                            setImagePreview(null)
+                            setQualityData(null)
+                          }}
+                          className="shrink-0 rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white shadow hover:bg-rose-700 transition"
+                        >
+                          Recapture Image
+                        </button>
+                      </div>
+
+                      <div className="border-t border-rose-200 pt-2 flex items-center gap-2">
+                        <input
+                          id="override-ungradable"
+                          type="checkbox"
+                          checked={overrideUngradable}
+                          onChange={(e) => setOverrideUngradable(e.target.checked)}
+                          className="rounded border-rose-400 text-rose-600 focus:ring-rose-500 h-4 w-4"
+                        />
+                        <label htmlFor="override-ungradable" className="text-[11px] font-semibold text-rose-900 cursor-pointer">
+                          Acknowledge ungradable quality warning and proceed anyway (Clinical Override)
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1685,17 +2038,31 @@ function NewScreeningForm() {
 
                 <button
                   type="button"
-                  disabled={!imageFile || uploadImageMutation.isPending}
+                  disabled={
+                    !imageFile ||
+                    uploadImageMutation.isPending ||
+                    (qualityData && (qualityData.quality_category === "Poor" || !qualityData.is_gradable) && !overrideUngradable)
+                  }
                   onClick={() => {
                     if (imageFile) {
                       uploadImageMutation.mutate(imageFile)
                     }
                   }}
-                  className="flex items-center gap-2 rounded-xl bg-[#173f56] px-6 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#102f42] disabled:opacity-50"
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-6 py-2.5 text-xs font-semibold text-white shadow-sm transition disabled:opacity-50",
+                    qualityData && (qualityData.quality_category === "Poor" || !qualityData.is_gradable) && !overrideUngradable
+                      ? "bg-rose-600 hover:bg-rose-700"
+                      : "bg-[#173f56] hover:bg-[#102f42]"
+                  )}
                 >
                   {uploadImageMutation.isPending ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" /> Uploading & Checking Quality...
+                    </>
+                  ) : qualityData && (qualityData.quality_category === "Poor" || !qualityData.is_gradable) && !overrideUngradable ? (
+                    <>
+                      <AlertTriangle className="h-4 w-4" />
+                      Recapture Required (Ungradable)
                     </>
                   ) : (
                     <>
@@ -1841,12 +2208,24 @@ function NewScreeningForm() {
                   <button
                     type="button"
                     onClick={() => analyzeMutation.mutate()}
-                    disabled={analyzeMutation.isPending}
-                    className="flex items-center gap-2 rounded-xl bg-[#38bdf8] px-6 py-2.5 text-xs font-bold text-[#0c242e] shadow-lg transition hover:bg-[#7dd3fc] disabled:opacity-50"
+                    disabled={
+                      analyzeMutation.isPending ||
+                      (qualityData && (qualityData.quality_category === "Poor" || !qualityData.is_gradable) && !overrideUngradable)
+                    }
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl px-6 py-2.5 text-xs font-bold shadow-lg transition disabled:opacity-50",
+                      qualityData && (qualityData.quality_category === "Poor" || !qualityData.is_gradable) && !overrideUngradable
+                        ? "bg-rose-600 text-white cursor-not-allowed hover:bg-rose-700"
+                        : "bg-[#38bdf8] text-[#0c242e] hover:bg-[#7dd3fc]"
+                    )}
                   >
                     {analyzeMutation.isPending ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" /> Analyzing Retinal Image...
+                      </>
+                    ) : qualityData && (qualityData.quality_category === "Poor" || !qualityData.is_gradable) && !overrideUngradable ? (
+                      <>
+                        <AlertTriangle className="h-4 w-4" /> Classification Blocked (Quality Ungradable)
                       </>
                     ) : (
                       <>
@@ -1997,6 +2376,26 @@ function NewScreeningForm() {
                   </div>
                 </div>
               )}
+
+              {/* Clinical Assurance & Calibration Banner (Feature 10) */}
+              <div className="rounded-2xl border border-cyan-500/20 bg-[#07111F] p-4 text-xs space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-[#39D9D0]" />
+                    <span className="font-bold text-white">Temperature-Calibrated Prediction Confidence</span>
+                  </div>
+                  <span className="rounded-full bg-[#39D9D0]/10 px-2.5 py-0.5 text-[10px] font-mono text-[#39D9D0] border border-[#39D9D0]/30">
+                    CALIBRATED (T = 1.1638)
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#9AAFC1] leading-relaxed">
+                  Raw neural network logits have undergone post-hoc temperature scaling fitted on held-out validation data to ensure predicted probabilities reflect true empirical clinical accuracy.
+                </p>
+                <div className="border-t border-white/10 pt-2 flex items-center gap-2 text-[10px] font-mono text-amber-300">
+                  <Info className="h-3.5 w-3.5 shrink-0" />
+                  <span>AI-ASSISTED SCREENING PROTOTYPE · NOT A SUBSTITUTE FOR AN OPHTHALMOLOGIST&apos;S DIAGNOSIS</span>
+                </div>
+              </div>
 
               {/* Actions Footer */}
               <div className="flex flex-col gap-3 pt-4 border-t border-slate-100 sm:flex-row sm:items-center sm:justify-between">

@@ -303,3 +303,28 @@ def link_google_account(payload: GoogleLinkRequest, request: Request, response: 
 def get_me(current_user: Annotated[User, Depends(get_current_user)]):
     """Return current authenticated user info."""
     return current_user
+
+
+@router.post("/logout")
+def logout(
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Log out current user, clear session cookie and record audit trail."""
+    response.delete_cookie(
+        key="drishti_session",
+        path="/",
+        httponly=True,
+        samesite="lax",
+    )
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="USER_LOGOUT",
+        resource_type="user",
+        resource_id=str(current_user.id),
+        user_role=current_user.role.value,
+        detail=f"User logged out: {current_user.email}",
+    ))
+    db.commit()
+    return {"status": "ok", "message": "Successfully logged out."}
