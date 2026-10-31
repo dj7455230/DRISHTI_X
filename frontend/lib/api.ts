@@ -127,6 +127,34 @@ export const screeningsApi = {
     api.post(`/api/screenings/${id}/review-action`, data),
   getReviewActions: (id: string) =>
     api.get(`/api/screenings/${id}/review-actions`),
+  // Features 31-34: Rural Low-Bandwidth, Capsule & Priority Sync
+  syncCapsule: (capsule: object) => api.post("/api/screenings/capsule", capsule),
+  uploadFullImage: (id: string, file: File) => {
+    const form = new FormData()
+    form.append("file", file)
+    return api.post(`/api/screenings/${id}/full-image`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+  },
+  uploadChunk: (id: string, formData: FormData, params: object) =>
+    api.post(`/api/screenings/${id}/upload-chunk`, formData, {
+      params,
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+  syncPriorityBatch: (batch: object) =>
+    api.post("/api/screenings/sync/priority-batch", batch),
+  getCapsule: (id: string) => api.get(`/api/screenings/${id}/capsule`),
+  getSyncQueue: (params?: object) =>
+    api.get("/api/screenings/sync/queue", { params }),
+  getSyncHistory: (params?: object) =>
+    api.get("/api/screenings/sync/history", { params }),
+  // Features 35: Telemedicine Specialist Portal
+  telemedicineQueue: (params?: object) =>
+    api.get("/api/screenings/telemedicine/queue", { params }),
+  requestFullImage: (id: string) =>
+    api.post(`/api/screenings/${id}/request-full-image`),
+  recordAction: (id: string, data: object) =>
+    api.post(`/api/screenings/${id}/actions`, data),
 }
 
 // ─── Referrals ────────────────────────────────────────────────
@@ -139,6 +167,17 @@ export const referralsApi = {
 // ─── Evaluation / Benchmarks ──────────────────────────────────
 export const evaluationApi = {
   generalization: () => api.get("/api/evaluation/generalization"),
+  metrics: () => api.get("/api/evaluation/metrics"),
+  export: () => api.get("/api/evaluation/export", { responseType: "blob" }),
+}
+
+// ─── Simulation & Discrete-Event Models ───────────────────────
+export const simulationApi = {
+  networkMesh: (params?: object) => api.get("/api/simulation/network-mesh", { params }),
+  bandwidthComparison: (params?: object) => api.get("/api/simulation/bandwidth-comparison", { params }),
+  specialistWorkload: (params?: object) => api.get("/api/simulation/specialist-workload", { params }),
+  run: (params?: object) => api.get("/api/simulation/run", { params }),
+  scenarios: () => api.get("/api/simulation/scenarios"),
 }
 
 // ─── Dashboard ────────────────────────────────────────────────

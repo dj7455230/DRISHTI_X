@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.db.base import Base, engine
 from app.api.routes import auth, patients, screenings, dashboard
-from app.api.routes import simulation, reports, referrals, admin, matlab
+from app.api.routes import simulation, reports, referrals, admin, matlab, evaluation
 
 # ----------------------------------------------------------------
 # Startup / Shutdown
@@ -123,6 +123,9 @@ async def lifespan(app: FastAPI):
                     ("priority_rule_version", "VARCHAR(20) DEFAULT '1.0.0' NULL"),
                     ("priority_calculated_at", "TIMESTAMP NULL"),
                     ("case_number", "VARCHAR(50) NULL"),
+                    ("capsule_synced", bool_pat_col),
+                    ("full_image_pending", bool_pat_col),
+                    ("sync_idempotency_key", "VARCHAR(128) NULL"),
                 ]
                 for col_name, col_type in screening_additions:
                     if col_name not in scr_cols:
@@ -226,6 +229,7 @@ app.include_router(reports.router)
 app.include_router(referrals.router)
 app.include_router(admin.router)
 app.include_router(matlab.router)
+app.include_router(evaluation.router)
 
 
 # ----------------------------------------------------------------

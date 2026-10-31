@@ -29,6 +29,8 @@ import {
   Cuboid,
   FileText,
   X,
+  Signal,
+  Network,
 } from "lucide-react"
 
 const clinicalNavigation = [
@@ -58,6 +60,16 @@ const clinicalNavigation = [
     label: "Screenings Archive",
     icon: Scan,
   },
+  {
+    href: "/rural-scenario",
+    label: "Rural PHC Demo",
+    icon: Signal,
+  },
+  {
+    href: "/offline-sync",
+    label: "Offline Sync Hub",
+    icon: WifiOff,
+  },
 ]
 
 const specialistNavigation = [
@@ -73,7 +85,7 @@ const specialistNavigation = [
   },
   {
     href: "/telemedicine",
-    label: "Telemedicine",
+    label: "Telemedicine Portal",
     icon: Satellite,
   },
 ]
@@ -83,6 +95,11 @@ const systemNavigation = [
     href: "/reports",
     label: "Diagnostic Reports",
     icon: FileText,
+  },
+  {
+    href: "/simulation",
+    label: "Network Simulation",
+    icon: Network,
   },
   {
     href: "/model-lab",

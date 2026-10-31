@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuthStore } from "@/lib/store"
 import { Sidebar } from "@/components/Sidebar"
 import { DemoBanner } from "@/components/DemoBanner"
+import { OfflineSyncBanner } from "@/components/OfflineSyncBanner"
 import { Menu, Eye } from "lucide-react"
 
 export default function AppLayout({
@@ -62,6 +63,9 @@ export default function AppLayout({
 
         {/* Global Demo / Model Status Banner */}
         <DemoBanner />
+
+        {/* Global Rural Offline & Priority Sync Banner */}
+        <OfflineSyncBanner />
 
         {/* Clinical Workspace Page Container */}
         <main className="flex-1 w-full bg-grid-pattern">

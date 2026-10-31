@@ -301,3 +301,67 @@ class ScreeningIntakeResponse(BaseModel):
     patient: PatientOut
     screening: ScreeningOut
 
+
+# ─── Feature 33: Evidence Capsule Schemas ──────────────────────
+class EvidenceCapsuleIn(BaseModel):
+    capsule_version: str = "1.0.0"
+    case_id: Optional[str] = None
+    case_number: Optional[str] = None
+    patient_ref_id: str
+    facility_code: str = "PHC-RURAL-01"
+    screening_timestamp: Optional[datetime] = None
+    ai_engine: Optional[str] = "EfficientNet-B0 + U-Net"
+    model_version: Optional[str] = "1.0.0"
+    predicted_grade: Optional[int] = None
+    grade_label: Optional[str] = None
+    confidence: Optional[float] = None
+    calibration_status: Optional[str] = None
+    image_quality_status: Optional[str] = None
+    assurance_decision: Optional[str] = None
+    priority_level: str = "ROUTINE"
+    priority_score: float = 0.0
+    priority_reason: Optional[str] = None
+    lesion_evidence_summary: Optional[Dict[str, Any]] = None
+    concordance_flags: Optional[Dict[str, Any]] = None
+    review_status: Optional[str] = "PENDING"
+    thumbnail_preview: Optional[str] = None
+    image_checksum: str
+    idempotency_key: Optional[str] = None
+
+
+class EvidenceCapsuleResponse(BaseModel):
+    capsule_id: str
+    screening_id: str
+    case_number: str
+    capsule_synced: bool = True
+    full_image_pending: bool = True
+    message: str
+    server_timestamp: datetime
+    priority_level: str
+    priority_score: float
+
+
+class PrioritySyncBatchRequest(BaseModel):
+    client_id: Optional[str] = None
+    facility_code: Optional[str] = "PHC-RURAL-01"
+    batch_timestamp: Optional[datetime] = None
+    capsules: List[EvidenceCapsuleIn] = []
+
+
+class PrioritySyncBatchResponse(BaseModel):
+    total_received: int
+    capsules_synced: int
+    already_existing: int
+    failed: int
+    results: List[Dict[str, Any]]
+
+
+class ChunkUploadResponse(BaseModel):
+    chunk_index: int
+    total_chunks: int
+    is_complete: bool
+    message: str
+    screening_id: str
+    checksum_verified: Optional[bool] = None
+
+
