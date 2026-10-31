@@ -1,0 +1,10 @@
+.git
+.vercel
+node_modules
+**/node_modules
+datasets
+**/datasets
+.next
+**/.next
+.DS_Store
+.env

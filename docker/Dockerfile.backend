@@ -1,0 +1,39 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir reportlab==4.4.10
+
+# Copy application code
+COPY backend/ ./backend/
+COPY ai/ ./ai/
+COPY simulink/ ./simulink/
+COPY .env .env 2>/dev/null || true
+
+# Create required directories
+RUN mkdir -p uploads models/weights reports
+
+# Copy model weights if they exist (mounted as volume in production)
+# COPY models/weights/best_model.pth ./models/weights/ 2>/dev/null || true
+
+ENV PYTHONPATH="/app/backend:/app"
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+CMD ["python", "-m", "uvicorn", "app.main:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--app-dir", "backend"]

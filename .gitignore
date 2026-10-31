@@ -1,0 +1,40 @@
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# Generated files
+uploads/
+reports/
+training/logs/
+*.db
+*.sqlite
+
+# ML datasets and models
+datasets/
+models/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+.vercel

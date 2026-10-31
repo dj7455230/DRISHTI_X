@@ -1,0 +1,59 @@
+# DRISHTI-X — EfficientNet-B0 Training Configuration
+# Datasets: APTOS 2019 (2563) + IDRiD Training (413) = 2976 clean train images
+# Held-out Validation: APTOS 2019 val.csv (549 images)
+# Held-out Test: APTOS 2019 test.csv (550 images)
+# Run: python training/train_efficientnet.py
+
+model:
+  architecture: efficientnet_b0
+  pretrained: true
+  num_classes: 5
+  dropout: 0.3
+  image_size: 224
+
+dataset:
+  train_csv: "datasets/train_split.csv"
+  val_csv: "datasets/val_split.csv"
+  test_csv: "datasets/test_split.csv"
+  image_col: "image_path"
+  label_col: "label"
+  num_workers: 0            # 0 for macOS MPS stability
+
+training:
+  epochs: 10
+  batch_size: 16
+  learning_rate: 1.0e-4
+  head_lr: 5.0e-4
+  weight_decay: 1.0e-4
+  early_stopping_patience: 5
+  lr_scheduler: cosine
+  warmup_epochs: 1
+
+loss:
+  type: smoothed_weighted_ce
+
+augmentation:
+  train:
+    - RandomHorizontalFlip
+    - RandomVerticalFlip
+    - RandomRotation: 15
+    - ColorJitter:
+        brightness: 0.15
+        contrast: 0.15
+        saturation: 0.10
+    - RandomResizedCrop: 224
+  val:
+    - Resize: 246
+    - CenterCrop: 224
+
+checkpointing:
+  save_dir: "models/weights"
+  save_best_only: true
+  metric: val_qwk
+
+logging:
+  log_dir: "training/logs"
+  log_interval: 25
+
+reproducibility:
+  seed: 42

@@ -1,0 +1,77 @@
+# ================================================================
+# DRISHTI-X — Render Deployment Configuration
+# ================================================================
+# Docs: https://render.com/docs/blueprint-spec
+# Usage: Connect your GitHub repo to Render and it will
+#        auto-detect this file.
+# ================================================================
+
+services:
+  # ── FastAPI Backend ──────────────────────────────────────────
+  - type: web
+    name: drishti-x-backend
+    runtime: python
+    region: oregon               # or singapore for India-closer latency
+    plan: starter                # free tier; upgrade for persistent disk + more RAM
+    rootDir: .                   # project root (NOT backend/) — needed for ai/ imports
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
+    healthCheckPath: /health
+    autoDeploy: true
+
+    envVars:
+      # ── Required — set in Render dashboard, not here ──────────
+      - key: SECRET_KEY
+        generateValue: true        # Render auto-generates a secure value
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: drishti-x-db
+          property: connectionString
+
+      - key: FRONTEND_URL
+        value: http://localhost:3000   # UPDATE to your deployed frontend URL
+
+      - key: GOOGLE_CLIENT_ID
+        value: 433805525665-1k3toag11rt3n98csf523r96rro1j39r.apps.googleusercontent.com
+
+      # ── Application settings ──────────────────────────────────
+      - key: APP_ENV
+        value: production
+
+      - key: DEBUG
+        value: "False"
+
+      - key: DEMO_MODE
+        value: "False"
+
+      - key: MODEL_STATUS
+        value: TRAINED
+
+      # ── Model path — relative to project root ─────────────────
+      - key: MODEL_DIR
+        value: models/weights
+
+      # ── Storage — /tmp is writable on Render (not persistent) ─
+      # For production persistence: add a Render Disk and set paths below.
+      - key: UPLOAD_DIR
+        value: /tmp/drishti_uploads
+
+      - key: REPORTS_DIR
+        value: /tmp/drishti_reports
+
+      - key: MATLAB_AVAILABLE
+        value: "False"
+
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  # ── PostgreSQL Database ──────────────────────────────────────
+databases:
+  - name: drishti-x-db
+    databaseName: drishti_x
+    region: oregon
+    plan: free

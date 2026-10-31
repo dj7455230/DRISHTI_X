@@ -1,0 +1,15 @@
+{
+  "name": "drishti-x",
+  "version": "0.1.0",
+  "description": "DRISHTI-X — AI-Assisted Diabetic Retinopathy Screening. AI-ASSISTED SCREENING — NOT A FINAL MEDICAL DIAGNOSIS.",
+  "private": true,
+  "scripts": {
+    "dev": "bash start.sh",
+    "backend": "python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --app-dir backend",
+    "frontend": "npm run dev --prefix frontend",
+    "install:frontend": "npm install --prefix frontend"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}

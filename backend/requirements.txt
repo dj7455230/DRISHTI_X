@@ -1,0 +1,52 @@
+# DRISHTI-X Backend — Production Requirements
+# Tested with Python 3.11+ (Render default)
+
+# ── Web framework ──────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# ── Data validation ────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# ── Database ───────────────────────────────────────────────────
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+
+# ── Authentication / Security ──────────────────────────────────
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+passlib[bcrypt]==1.7.4
+google-auth>=2.27.0
+
+# ── File handling ──────────────────────────────────────────────
+aiofiles==24.1.0
+Pillow==11.0.0
+
+# ── HTTP client ────────────────────────────────────────────────
+httpx==0.28.1
+
+# ── ML / AI ────────────────────────────────────────────────────
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+torchvision>=0.15.0
+timm==1.0.12
+
+# ── Computer Vision ────────────────────────────────────────────
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+
+# ── Data processing ────────────────────────────────────────────
+pandas==2.2.3
+scikit-learn==1.5.2
+
+# ── PDF generation ─────────────────────────────────────────────
+reportlab==4.2.5
+
+# ── Utilities ──────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── Testing (kept for CI but not loaded in production) ─────────
+pytest==8.3.3
+pytest-asyncio==0.24.0
