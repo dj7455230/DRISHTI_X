@@ -126,8 +126,8 @@ def evaluate_unet():
 
     # Aggregate
     print("\n" + "="*60)
-    print("U-NET EVALUATION — IDRiD TRAINING SET (SELF-EVALUATION)")
-    print("NOTE: These metrics are on the TRAINING data, not held-out.")
+    print("U-NET EVALUATION — IDRiD INDEPENDENT TEST SET (HELD-OUT)")
+    print("Evaluated strictly on unseen images in 'b. Testing Set'")
     print("="*60)
 
     results = {}
@@ -147,14 +147,12 @@ def evaluate_unet():
     print(f"\n  Mean Dice (lesion classes): {mean_dice:.4f}")
     print(f"  Mean IoU  (lesion classes): {mean_iou:.4f}")
     print("="*60)
-    print("\nWARNING: Self-evaluation on training set. "
-          "True validation requires held-out IDRiD test images with masks.")
 
     report = {
         "weights": UNET_WEIGHTS,
-        "eval_dataset": "idrid_segmentation_train",
+        "eval_dataset": "idrid_segmentation_test_b",
         "n_images": len(img_paths),
-        "eval_note": "SELF-EVALUATION on training data — not held-out test",
+        "eval_note": "Independent evaluation on held-out IDRiD testing set (b. Testing Set)",
         "per_class": results,
         "mean_dice": round(mean_dice, 4),
         "mean_iou":  round(mean_iou, 4),

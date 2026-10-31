@@ -11,7 +11,7 @@ Requirements:
 
 Status: NOT_TRAINED until this script is run successfully.
 """
-import os, sys, json, time, glob
+import os, sys, json, time, glob, argparse
 from pathlib import Path
 
 import torch
@@ -93,7 +93,7 @@ class IDRiDSegDataset(Dataset):
         return image, torch.from_numpy(mask).long()
 
 
-def train_unet():
+def train_unet(epochs: int = 15):
     if not os.path.isdir(TRAIN_IMGS):
         print(f"DATASET NOT AVAILABLE: {TRAIN_IMGS}")
         print("Download IDRiD segmentation dataset first.")
@@ -119,17 +119,17 @@ def train_unet():
     print(f"U-Net parameters: {model.parameter_count():,}")
     ce_loss   = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     best_val_loss = float("inf")
     os.makedirs("models/weights", exist_ok=True)
     os.makedirs("training/logs",  exist_ok=True)
     history = []
 
-    print(f"\nU-Net Training — train={n_train}, val={n_val}")
+    print(f"\nU-Net Training ({epochs} epochs) — train={n_train}, val={n_val}")
     print("="*60)
 
-    for epoch in range(1, 51):
+    for epoch in range(1, epochs + 1):
         model.train()
         t0 = time.time()
         tr_loss = 0.0
@@ -177,4 +177,7 @@ def train_unet():
 
 
 if __name__ == "__main__":
-    train_unet()
+    parser = argparse.ArgumentParser(description="Train U-Net on IDRiD Segmentation Groundtruths")
+    parser.add_argument("--epochs", type=int, default=15, help="Number of training epochs (default: 15)")
+    args = parser.parse_args()
+    train_unet(epochs=args.epochs)

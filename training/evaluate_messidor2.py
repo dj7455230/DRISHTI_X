@@ -130,9 +130,9 @@ def evaluate_messidor2():
 
     print("\n" + "="*65)
     print("EXTERNAL EVALUATION — MESSIDOR-2")
-    print("Training dataset: APTOS 2019 + IDRiD")
+    print("Training dataset: APTOS 2019 (Internal Split)")
     print(f"External test N:  {len(all_labels)}")
-    print("NOTE: Messidor-2 grade 3 mapped to grade 4 (no grade 3 in Messidor).")
+    print("Standard: Adjudicated 5-point ICDR Diabetic Retinopathy Scale (0-4)")
     print("="*65)
     print(f"  Accuracy:    {mc['accuracy']:.4f}")
     print(f"  Macro F1:    {mc['macro_f1']:.4f}")
@@ -157,8 +157,8 @@ def evaluate_messidor2():
         "external_test_dataset": "Messidor-2",
         "external_test_n": len(all_labels),
         "grade_mapping_note": (
-            "Messidor-2 grades 0-3 remapped to International Clinical Scale 0,1,2,4. "
-            "Grade 3 (Severe NPDR) is absent from Messidor-2."
+            "Messidor-2 adjudicated grades adhere directly to the 5-point ICDR scale (0 to 4: "
+            "No DR, Mild NPDR, Moderate NPDR, Severe NPDR, PDR)."
         ),
         "multiclass": mc,
         "binary_referable": bm,

@@ -244,6 +244,21 @@ def main():
     hist_path = os.path.join(log_dir, "training_history.json")
     with open(hist_path, "w") as f:
         json.dump(history, f, indent=2)
+    pd.DataFrame(history).to_csv(os.path.join(log_dir, "training_history.csv"), index=False)
+
+    # Post-hoc Temperature Scaling calibration on validation set
+    print("\nFitting Temperature Scaler on validation set...")
+    try:
+        from ai.classification.calibration import TemperatureScaler
+        calibrator = TemperatureScaler()
+        # Load best weights before calibration
+        model.load_state_dict(torch.load(weights_path, map_location=device))
+        calibrator.fit(model, val_loader, device)
+        cal_path = os.path.join(save_dir, "temperature.json")
+        calibrator.save(cal_path)
+        print(f"  ✓ Calibrated temperature: T={calibrator.temperature:.4f} saved to {cal_path}")
+    except Exception as e:
+        print(f"  Warning: Temperature calibration skipped: {e}")
 
     print("\n" + "=" * 65)
     print("TRAINING FINISHED")
