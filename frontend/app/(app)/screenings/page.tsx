@@ -57,6 +57,7 @@ export default function ScreeningsPage() {
       const q = search.toLowerCase()
       return (
         s.id?.toLowerCase().includes(q) ||
+        s.case_number?.toLowerCase().includes(q) ||
         s.patient_code?.toLowerCase().includes(q) ||
         s.eye_side?.toLowerCase().includes(q)
       )
@@ -159,7 +160,7 @@ export default function ScreeningsPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-xs font-mono font-bold text-white group-hover:text-[#39D9D0] transition-colors truncate">
-                        SCR-{s.id}
+                        {s.case_number || (s.id ? `SCR-${s.id.slice(0, 8)}` : "SCR-CASE")}
                       </p>
                       {s.patient_code && (
                         <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-white/5 text-[#5A7184]">

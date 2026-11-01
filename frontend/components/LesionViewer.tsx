@@ -14,6 +14,7 @@ import {
   Eye,
   Sliders,
 } from "lucide-react"
+import { SafeImage } from "@/components/SafeImage"
 
 interface LesionCandidateInfo {
   count?: number
@@ -214,11 +215,11 @@ export default function LesionViewer({
                 className="relative w-full h-full transition-transform duration-150"
                 style={{ transform: `scale(${zoom})` }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <SafeImage
                   src={originalUrl}
                   alt="Original fundus photograph"
                   className="w-full h-full object-contain"
+                  fallbackTitle="Fundus Capture Unavailable"
                 />
               </div>
             ) : (
@@ -245,17 +246,16 @@ export default function LesionViewer({
                 style={{ transform: `scale(${zoom})` }}
               >
                 {/* Base Fundus Image */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <SafeImage
                   src={originalUrl}
                   alt="Base fundus for lesion overlay"
                   className="w-full h-full object-contain"
+                  fallbackTitle="Fundus Base Layer Unavailable"
                 />
 
                 {/* Lesion Mask Layer */}
                 {maskUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <SafeImage
                     src={maskUrl}
                     alt="Lesion segmentation overlay"
                     className="absolute inset-0 w-full h-full object-contain mix-blend-screen pointer-events-none transition-opacity duration-150"
@@ -267,6 +267,7 @@ export default function LesionViewer({
                           })`
                         : undefined,
                     }}
+                    fallbackTitle="Lesion Mask Pending"
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">

@@ -2,13 +2,30 @@
 DRISHTI-X — FastAPI Application Entry Point
 See the Evidence. Explain the Risk. Connect Rural India.
 """
+import sys
 import os
 import secrets
 import string
+from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+
+# ----------------------------------------------------------------
+# Robust sys.path bootstrapping
+# Ensures both backend/ and project root are always on sys.path
+# regardless of whether started via uvicorn backend.app.main:app,
+# uvicorn app.main:app --app-dir backend, or direct python execution.
+# ----------------------------------------------------------------
+_file_dir = Path(__file__).resolve().parent          # backend/app
+_backend_dir = _file_dir.parent                      # backend
+_project_root = _backend_dir.parent                 # project root
+
+for _p in [str(_backend_dir), str(_project_root)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,6 +116,11 @@ async def lifespan(app: FastAPI):
                     ("visual_symptoms", "JSON NULL"),
                     ("symptom_onset", "VARCHAR(100) NULL"),
                     ("pregnancy_status", "VARCHAR(50) NULL"),
+                    ("pin_code", "VARCHAR(20) NULL"),
+                    ("preferred_language", "VARCHAR(50) DEFAULT 'HINDI' NULL"),
+                    ("diabetes_status", "VARCHAR(50) NULL"),
+                    ("blood_pressure", "VARCHAR(50) NULL"),
+                    ("relevant_medications", "TEXT NULL"),
                     ("clinical_history", "JSON NULL"),
                 ]
                 for col_name, col_type in patient_additions:
@@ -114,6 +136,8 @@ async def lifespan(app: FastAPI):
                     ("screening_purpose", "VARCHAR(100) DEFAULT 'ROUTINE_DR_SCREENING' NULL"),
                     ("screening_notes", "TEXT NULL"),
                     ("referral_source", "VARCHAR(100) NULL"),
+                    ("referring_doctor", "VARCHAR(200) NULL"),
+                    ("consent_status", "VARCHAR(50) DEFAULT 'CONSENT_OBTAINED' NULL"),
                     ("facility_name", "VARCHAR(200) NULL"),
                     ("operator_name", "VARCHAR(200) NULL"),
                     ("clinical_context", "JSON NULL"),
@@ -141,6 +165,22 @@ async def lifespan(app: FastAPI):
                             conn.execute(text(f"ALTER TABLE audit_logs ADD COLUMN {col_name} {col_type}"))
                         except Exception as col_err:
                             print(f"[Startup] Migration note for audit_logs.{col_name}: {col_err}")
+
+            # Auto-backfill case numbers for existing screenings where null
+            if "screenings" in tables:
+                try:
+                    null_cases = conn.execute(text("SELECT id FROM screenings WHERE case_number IS NULL")).fetchall()
+                    for rec in null_cases:
+                        sid_str = str(rec[0])
+                        now_str = datetime.now(timezone.utc).strftime("%Y%m")
+                        sfx = sid_str.replace("-", "")[:6].upper()
+                        cnum = f"DX-CASE-{now_str}-{sfx}"
+                        conn.execute(
+                            text("UPDATE screenings SET case_number = :cnum WHERE id = :sid"),
+                            {"cnum": cnum, "sid": rec[0]}
+                        )
+                except Exception as bf_err:
+                    print(f"[Startup] Case number backfill note: {bf_err}")
     except Exception as e:
         print(f"[Startup] DB schema check note: {e}")
 
@@ -199,20 +239,22 @@ app = FastAPI(
 # CORS — configurable via FRONTEND_URL environment variable
 # Production: set FRONTEND_URL=https://your-frontend.vercel.app
 # ----------------------------------------------------------------
-allowed_origins = [
+raw_origins = [
     settings.FRONTEND_URL,
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
-# Also allow any additional comma-separated origins in FRONTEND_URL
 if "," in settings.FRONTEND_URL:
-    allowed_origins = [
-        o.strip() for o in settings.FRONTEND_URL.split(",")
-    ] + ["http://localhost:3000", "http://127.0.0.1:3000"]
+    raw_origins.extend(settings.FRONTEND_URL.split(","))
+
+# Normalize origins: strip whitespace and trailing slashes
+allowed_origins = list({o.strip().rstrip("/") for o in raw_origins if o and o.strip()})
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(set(allowed_origins)),
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -294,37 +336,51 @@ async def validation_exception_handler(request, exc: RequestValidationError):
     )
 
 
-@app.get("/health")
-def root_health():
-    """Render health check endpoint — fast, no DB query."""
-    return {"status": "ok", "app": settings.APP_NAME, "version": settings.APP_VERSION}
+# ----------------------------------------------------------------
+# Health & Status Diagnostics Helpers (Section 4)
+# ----------------------------------------------------------------
+def check_db_health():
+    """Real query to check database connectivity."""
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {
+            "status": "healthy",
+            "dialect": engine.dialect.name,
+            "connected": True,
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "dialect": getattr(getattr(engine, "dialect", None), "name", "unknown"),
+            "connected": False,
+            "error": str(e),
+        }
 
 
-@app.get("/api/health")
-def health_check():
-    """Live health check — reads actual model loader status."""
-    import os
-
-    weights_path      = os.path.join(settings.model_weights_path, "best_model.pth")
+def check_ai_health():
+    """Verify EfficientNet-B0 and U-Net model checkpoints."""
+    weights_path = os.path.join(settings.model_weights_path, "best_model.pth")
     unet_weights_path = os.path.join(settings.model_weights_path, "unet_lesion.pth")
-    weights_exist      = os.path.exists(weights_path)
+
+    weights_exist = os.path.exists(weights_path)
     unet_weights_exist = os.path.exists(unet_weights_path)
 
     live_model_status = settings.MODEL_STATUS
-    live_demo_mode    = settings.DEMO_MODE
+    live_demo_mode = settings.DEMO_MODE
 
     try:
         from ai.classification.model import _loader
         if _loader is not None:
             live_model_status = _loader.status
-            live_demo_mode    = not _loader.is_ready_for_real_inference()
+            live_demo_mode = not _loader.is_ready_for_real_inference()
         elif weights_exist:
             live_model_status = "TRAINED"
-            live_demo_mode    = False
+            live_demo_mode = False
     except Exception:
         pass
 
-    # U-Net status
     unet_status = "NOT_TRAINED"
     try:
         if unet_weights_exist:
@@ -333,6 +389,125 @@ def health_check():
             unet_status = ckpt.get("status", "TRAINED")
     except Exception:
         unet_status = "TRAINED" if unet_weights_exist else "NOT_TRAINED"
+
+    return {
+        "status": "healthy" if (weights_exist or unet_weights_exist) else "degraded",
+        "classifier_status": live_model_status,
+        "unet_status": unet_status,
+        "weights_available": weights_exist,
+        "unet_weights_available": unet_weights_exist,
+        "demo_mode": live_demo_mode,
+    }
+
+
+# ----------------------------------------------------------------
+# Root & Health Check Endpoints (Section 4)
+# ----------------------------------------------------------------
+@app.get("/docs", include_in_schema=False)
+def docs_redirect():
+    return RedirectResponse(url="/api/docs")
+
+
+@app.get("/redoc", include_in_schema=False)
+def redoc_redirect():
+    return RedirectResponse(url="/api/redoc")
+
+
+@app.get("/openapi.json", include_in_schema=False)
+def openapi_redirect():
+    return RedirectResponse(url="/api/openapi.json")
+
+
+@app.get("/")
+def root_service_info():
+    """
+    Root API endpoint identifying DRISHTI-X backend, health, and services.
+    """
+    db_h = check_db_health()
+    ai_h = check_ai_health()
+    overall = "healthy" if db_h["connected"] else "degraded"
+
+    return {
+        "app": settings.APP_NAME,
+        "description": "DRISHTI-X — AI-Assisted Retinal Microvasculature Diagnostics and Diabetic Retinopathy Screening System",
+        "version": settings.APP_VERSION,
+        "environment": settings.APP_ENV,
+        "status": overall,
+        "services": {
+            "api": "healthy",
+            "database": db_h["status"],
+            "ai_models": ai_h["status"],
+        },
+        "docs_url": "/api/docs",
+        "health_url": "/api/health",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/health")
+def root_health():
+    """
+    Fast health check endpoint — verifies database connectivity and returns operational status.
+    """
+    db_h = check_db_health()
+    ai_h = check_ai_health()
+    overall = "ok" if db_h["connected"] else "degraded"
+
+    return {
+        "status": overall,
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "database": db_h["status"],
+        "ai_models": ai_h["status"],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/ready")
+def readiness_check():
+    """
+    Readiness probe endpoint indicating whether the application is fully ready to serve requests.
+    Distinguishes API liveness from dependency readiness.
+    """
+    db_h = check_db_health()
+    ai_h = check_ai_health()
+
+    is_ready = bool(db_h["connected"])
+
+    response_payload = {
+        "ready": is_ready,
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "environment": settings.APP_ENV,
+        "database_connected": db_h["connected"],
+        "database_dialect": db_h.get("dialect", "unknown"),
+        "ai_classifier_status": ai_h["classifier_status"],
+        "ai_unet_status": ai_h["unet_status"],
+        "demo_mode": ai_h["demo_mode"],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if not is_ready:
+        return JSONResponse(
+            status_code=503,
+            content=response_payload
+        )
+
+    return response_payload
+
+
+@app.get("/api/health")
+def health_check():
+    """
+    Comprehensive live health check endpoint:
+    - Real database connectivity check
+    - Real model loader & checkpoint inspection
+    - Application version & environment
+    """
+    db_h = check_db_health()
+    ai_h = check_ai_health()
+
+    overall = "ok" if db_h["connected"] else "degraded"
 
     temperature_val = 1.1638
     try:
@@ -346,15 +521,24 @@ def health_check():
         pass
 
     return {
-        "status":                "ok",
-        "app":                   settings.APP_NAME,
-        "version":               settings.APP_VERSION,
-        "model_status":          live_model_status,
-        "unet_status":           unet_status,
-        "temperature":           temperature_val,
-        "demo_mode":             live_demo_mode,
-        "weights_available":     weights_exist,
-        "unet_weights_available": unet_weights_exist,
-        "matlab_available":      settings.MATLAB_AVAILABLE,
-        "disclaimer":            "AI-ASSISTED SCREENING — NOT A FINAL MEDICAL DIAGNOSIS",
+        "status": overall,
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "environment": settings.APP_ENV,
+        "database": db_h,
+        "ai_services": ai_h,
+        "model_status": ai_h["classifier_status"],
+        "unet_status": ai_h["unet_status"],
+        "temperature": temperature_val,
+        "demo_mode": ai_h["demo_mode"],
+        "weights_available": ai_h["weights_available"],
+        "unet_weights_available": ai_h["unet_weights_available"],
+        "matlab_available": settings.MATLAB_AVAILABLE,
+        "disclaimer": "AI-ASSISTED SCREENING — NOT A FINAL MEDICAL DIAGNOSIS",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True, app_dir=str(_backend_dir))

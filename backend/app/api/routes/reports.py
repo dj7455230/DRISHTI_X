@@ -7,10 +7,11 @@ GET  /api/reports                  — list all reports
 import uuid
 import os
 from datetime import datetime, timezone
-from typing import Annotated, List
+from typing import Annotated, List, Union
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import cast, String
 
 from app.db.base import get_db
 from app.models.screening import Screening, Report
@@ -24,21 +25,64 @@ from app.services.report_service import generate_report
 router = APIRouter(prefix="/api", tags=["Reports"])
 
 
+def _resolve_screening(screening_id: Union[uuid.UUID, str], db: Session) -> Screening:
+    if isinstance(screening_id, uuid.UUID):
+        s = db.query(Screening).filter(Screening.id == screening_id).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Screening not found.")
+        return s
+
+    id_str = str(screening_id).strip()
+    try:
+        val_uuid = uuid.UUID(id_str)
+        s = db.query(Screening).filter(Screening.id == val_uuid).first()
+        if s:
+            return s
+    except (ValueError, AttributeError):
+        pass
+
+    s = db.query(Screening).filter(
+        (Screening.case_number == id_str) |
+        (Screening.case_number.ilike(id_str))
+    ).first()
+    if s:
+        return s
+
+    clean_prefix = id_str
+    for pfx in ["DX-CASE-", "SCR-", "CASE-", "DX-"]:
+        if clean_prefix.upper().startswith(pfx):
+            clean_prefix = clean_prefix[len(pfx):]
+            break
+    clean_prefix = clean_prefix.strip().lower()
+    if len(clean_prefix) >= 4:
+        s = db.query(Screening).filter(
+            cast(Screening.id, String).ilike(f"{clean_prefix}%")
+        ).first()
+        if s:
+            return s
+        s = db.query(Screening).filter(
+            Screening.case_number.ilike(f"%{clean_prefix}%")
+        ).first()
+        if s:
+            return s
+
+    raise HTTPException(status_code=404, detail="Screening not found.")
+
+
 @router.post("/screenings/{screening_id}/report", status_code=201)
 def create_report(
-    screening_id: uuid.UUID,
+    screening_id: Union[uuid.UUID, str],
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Generate and store a structured screening report."""
-    screening = db.query(Screening).filter(Screening.id == screening_id).first()
-    if not screening:
-        raise HTTPException(status_code=404, detail="Screening not found.")
+    screening = _resolve_screening(screening_id, db)
+    actual_id = screening.id
 
     patient    = db.query(Patient).filter(Patient.id == screening.patient_id).first()
-    fundus     = db.query(FundusImage).filter(FundusImage.screening_id == screening_id).first()
-    prediction = db.query(Prediction).filter(Prediction.screening_id == screening_id).first()
-    review     = db.query(DoctorReview).filter(DoctorReview.screening_id == screening_id).first()
+    fundus     = db.query(FundusImage).filter(FundusImage.screening_id == actual_id).first()
+    prediction = db.query(Prediction).filter(Prediction.screening_id == actual_id).first()
+    review     = db.query(DoctorReview).filter(DoctorReview.screening_id == actual_id).first()
 
     from app.core.config import settings
 
@@ -54,7 +98,7 @@ def create_report(
 
     # Generate PDF
     os.makedirs(settings.REPORTS_DIR, exist_ok=True)
-    pdf_path = os.path.join(settings.REPORTS_DIR, f"report_{screening_id}.pdf")
+    pdf_path = os.path.join(settings.REPORTS_DIR, f"report_{actual_id}.pdf")
     try:
         from app.services.pdf_report_service import generate_pdf_report
         generate_pdf_report(report_data, pdf_path)
@@ -63,13 +107,13 @@ def create_report(
         report_data["pdf_warning"] = f"PDF generation failed: {str(e)}"
 
     # Upsert Report record
-    report = db.query(Report).filter(Report.screening_id == screening_id).first()
+    report = db.query(Report).filter(Report.screening_id == actual_id).first()
     if not report:
-        report = Report(screening_id=screening_id)
+        report = Report(screening_id=actual_id)
         db.add(report)
 
     report.report_path = report_data.get("report_path",
-        os.path.join(settings.REPORTS_DIR, f"report_{screening_id}.json"))
+        os.path.join(settings.REPORTS_DIR, f"report_{actual_id}.json"))
     report.report_format = "JSON"
     report.summary = report_data
     report.generated_by = current_user.id
@@ -77,10 +121,10 @@ def create_report(
 
     db.add(AuditLog(
         user_id=current_user.id,
-        screening_id=screening_id,
+        screening_id=actual_id,
         action="REPORT_GENERATED",
         resource_type="report",
-        resource_id=str(screening_id),
+        resource_id=str(actual_id),
         user_role=current_user.role.value,
         detail="Structured screening report generated",
     ))
@@ -91,12 +135,14 @@ def create_report(
 
 @router.get("/screenings/{screening_id}/report")
 def get_report(
-    screening_id: uuid.UUID,
+    screening_id: Union[uuid.UUID, str],
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Retrieve a previously generated report."""
-    report = db.query(Report).filter(Report.screening_id == screening_id).first()
+    screening = _resolve_screening(screening_id, db)
+    actual_id = screening.id
+    report = db.query(Report).filter(Report.screening_id == actual_id).first()
     if not report:
         raise HTTPException(
             status_code=404,
@@ -107,14 +153,16 @@ def get_report(
 
 @router.get("/screenings/{screening_id}/report/pdf")
 def download_report_pdf(
-    screening_id: uuid.UUID,
+    screening_id: Union[uuid.UUID, str],
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Download the PDF report file."""
     from fastapi.responses import FileResponse
     from app.core.config import settings
-    pdf_path = os.path.join(settings.REPORTS_DIR, f"report_{screening_id}.pdf")
+    screening = _resolve_screening(screening_id, db)
+    actual_id = screening.id
+    pdf_path = os.path.join(settings.REPORTS_DIR, f"report_{actual_id}.pdf")
     if not os.path.exists(pdf_path):
         raise HTTPException(
             status_code=404,
@@ -123,7 +171,7 @@ def download_report_pdf(
     return FileResponse(
         pdf_path,
         media_type="application/pdf",
-        filename=f"DRISHTI-X_Report_{str(screening_id)[:8]}.pdf"
+        filename=f"DRISHTI-X_Report_{str(actual_id)[:8]}.pdf"
     )
 
 

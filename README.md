@@ -64,48 +64,50 @@ The platform unites deep learning computer vision, temperature-calibrated classi
 
 ## Quick Start
 
-### 1. Launch Platform (macOS / Linux)
+### 1. Launch Platform (Single Command)
 ```bash
-bash start.sh
+./run.sh
 ```
 
 ### 2. Manual Execution
-**Backend (FastAPI):**
+**Backend (FastAPI on Port 8000):**
 ```bash
-export PYTHONPATH="$(pwd)/backend:$(pwd)"
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --app-dir backend
+python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-- API Documentation: `http://localhost:8000/api/docs`
-- Health Check: `http://localhost:8000/api/health`
+- API Documentation: `http://localhost:8000/docs` (or `/api/docs`)
+- Health Check: `http://localhost:8000/health` (or `/api/health`)
 
-**Frontend (Next.js 16.3 + React 19):**
+**Frontend (Next.js 16 on Port 3000):**
 ```bash
-cd frontend
-npm run dev
+npm --prefix frontend run dev
 ```
-- Open `http://localhost:3000`
+- Web Application: `http://localhost:3000`
 
 ---
 
 ## Automated Verification
 
 ```bash
-# Run backend PyTest suite (123 test cases)
-pytest tests/
+# Run all backend PyTest suites (149 test cases)
+pytest tests/ -v
 
-# Run frontend Next.js production build
+# Run Next.js production build verification
 npm --prefix frontend run build
-
-# Run frontend ESLint code quality check
-npm --prefix frontend run lint
 ```
 
 ---
 
-## Documentation
+## Technical Documentation Suite
 
-- `docs/FINAL_IMPLEMENTATION_AUDIT.md`: Complete audit of code, models, data, and routes.
-- `docs/FINAL_IMPLEMENTATION_PLAN.md`: 9-phase systematic architecture and transformation plan.
-- `docs/FINAL_IMPLEMENTATION_REPORT.md`: Comprehensive completion report and test verification.
-- `docs/FEATURE_STATUS.md`: Feature-by-feature operational status matrix.
-- `docs/RUN_AND_DEPLOY.md`: Step-by-step installation, credentials, and deployment guide.
+- [`docs/DRISHTI_X_FULL_SYSTEM_AUDIT.md`](file:///Users/devanshjain06/Desktop/aictr/docs/DRISHTI_X_FULL_SYSTEM_AUDIT.md): Comprehensive system audit, stack inspection, and feature verification matrix.
+- [`docs/ARCHITECTURE.md`](file:///Users/devanshjain06/Desktop/aictr/docs/ARCHITECTURE.md): Multi-tier system architecture and data flows.
+- [`docs/BACKEND_SETUP.md`](file:///Users/devanshjain06/Desktop/aictr/docs/BACKEND_SETUP.md): FastAPI service architecture, routes, and backend setup guide.
+- [`docs/DATABASE_SETUP.md`](file:///Users/devanshjain06/Desktop/aictr/docs/DATABASE_SETUP.md): PostgreSQL schema, 14 tables, migrations, and SQLite fallback.
+- [`docs/API_DOCUMENTATION.md`](file:///Users/devanshjain06/Desktop/aictr/docs/API_DOCUMENTATION.md): REST API endpoints and Swagger documentation.
+- [`docs/AI_MODEL_DOCUMENTATION.md`](file:///Users/devanshjain06/Desktop/aictr/docs/AI_MODEL_DOCUMENTATION.md): EfficientNet-B0, U-Net, temperature calibration, and Grad-CAM.
+- [`docs/DATASET_AND_TRAINING.md`](file:///Users/devanshjain06/Desktop/aictr/docs/DATASET_AND_TRAINING.md): Dataset separation (APTOS, IDRiD, Messidor-2) and training pipelines.
+- [`docs/SECURITY_AND_PRIVACY.md`](file:///Users/devanshjain06/Desktop/aictr/docs/SECURITY_AND_PRIVACY.md): RBAC permissions, patient privacy, and SHA-256 audit blockchain.
+- [`docs/TESTING_REPORT.md`](file:///Users/devanshjain06/Desktop/aictr/docs/TESTING_REPORT.md): 149-test automated test report and integration test runbook.
+- [`docs/DEPLOYMENT_GUIDE.md`](file:///Users/devanshjain06/Desktop/aictr/docs/DEPLOYMENT_GUIDE.md): Railway, Render, and Vercel cloud deployment instructions.
+- [`docs/TROUBLESHOOTING.md`](file:///Users/devanshjain06/Desktop/aictr/docs/TROUBLESHOOTING.md): Port resolution, 404 routing, and operational troubleshooting.
+- [`docs/FINAL_SYSTEM_VERIFICATION.md`](file:///Users/devanshjain06/Desktop/aictr/docs/FINAL_SYSTEM_VERIFICATION.md): Final acceptance matrix and honest status labels.

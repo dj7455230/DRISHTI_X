@@ -1,14 +1,16 @@
 /**
  * DRISHTI-X — API Client
- * Typed Axios client for all backend endpoints.
+ * Centralized, typed Axios client with unified error handling, timeout, and auth interceptor.
  */
 import axios from "axios"
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { getApiBaseUrl, API_CONFIG } from "./config"
 
 export const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
+  baseURL: getApiBaseUrl(),
+  timeout: API_CONFIG.TIMEOUT_MS,
+  headers: {
+    "Content-Type": "application/json",
+  },
 })
 
 // Attach JWT token to every request (with multiple storage fallbacks)
@@ -46,7 +48,7 @@ api.interceptors.response.use(
 
     if (!isAuthRoute && !isWorkflowRoute && err.response?.status === 401 && typeof window !== "undefined") {
       localStorage.removeItem("drishti_token")
-      window.location.href = "/sign-in"
+      window.location.href = "/login"
     }
     return Promise.reject(err)
   }
@@ -218,7 +220,10 @@ export const adminApi = {
   stats: () => api.get("/api/admin/stats"),
 }
 
-// ─── Health ────────────────────────────────────────────────────
+// ─── Health & Readiness ───────────────────────────────────────
 export const healthApi = {
   check: () => api.get("/api/health"),
+  ready: () => api.get("/ready"),
+  rootHealth: () => api.get("/health"),
+  root: () => api.get("/"),
 }

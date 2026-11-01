@@ -315,7 +315,7 @@ export default function ReviewPage() {
               const isCrit = priorityLevel === "CRITICAL"
               const isHigh = priorityLevel === "HIGH"
               const isMed = priorityLevel === "MEDIUM"
-              const caseNo = c.case_number || `DX-CASE-${c.id.slice(0, 8).toUpperCase()}`
+              const caseNo = c.case_number || (c.id ? `DX-CASE-${c.id.slice(0, 8).toUpperCase()}` : "DX-CASE-UNKNOWN")
 
               return (
                 <div

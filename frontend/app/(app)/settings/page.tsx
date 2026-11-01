@@ -1,6 +1,7 @@
 "use client"
 import { useAuthStore } from "@/lib/store"
 import { Settings } from "lucide-react"
+import { getApiBaseUrl } from "@/lib/config"
 
 export default function SettingsPage() {
   const { user } = useAuthStore()
@@ -27,7 +28,7 @@ export default function SettingsPage() {
       <div className="glass-card p-6 space-y-3">
         <h2 className="text-sm font-semibold text-white">System</h2>
         {[
-          { label: "API URL",       val: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000" },
+          { label: "API Base URL",  val: getApiBaseUrl() },
           { label: "Model Status",  val: "NOT_TRAINED" },
           { label: "MATLAB",        val: "NOT AVAILABLE" },
           { label: "Demo Mode",     val: "ACTIVE" },

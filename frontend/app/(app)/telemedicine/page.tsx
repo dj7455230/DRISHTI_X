@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { screeningsApi } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { SafeImage } from "@/components/SafeImage"
 
 const PRIORITY_BADGES: Record<string, { bg: string; text: string; border: string }> = {
   CRITICAL: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/30" },
@@ -355,16 +356,18 @@ export default function TelemedicinePortalPage() {
 
                     <div className="relative aspect-square w-full rounded-lg bg-black/60 border border-slate-800 flex items-center justify-center overflow-hidden">
                       {isLimitedEvidence && capsuleDetail?.thumbnail_preview ? (
-                        <img
+                        <SafeImage
                           src={capsuleDetail.thumbnail_preview.startsWith("data:") ? capsuleDetail.thumbnail_preview : `data:image/jpeg;base64,${capsuleDetail.thumbnail_preview}`}
                           alt="Evidence Capsule Thumbnail"
                           className="w-full h-full object-contain filter contrast-125"
+                          fallbackTitle="Thumbnail Preview Unavailable"
                         />
                       ) : caseDetail?.fundus_image?.image_url ? (
-                        <img
+                        <SafeImage
                           src={caseDetail.fundus_image.image_url}
                           alt="Full Fundus Retinal Image"
                           className="w-full h-full object-contain"
+                          fallbackTitle="Fundus Retinal Image Unavailable"
                         />
                       ) : (
                         <div className="text-center p-4 text-slate-500 text-xs">

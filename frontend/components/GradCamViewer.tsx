@@ -16,6 +16,7 @@ import {
   Info,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SafeImage } from "@/components/SafeImage"
 
 interface GradCamViewerProps {
   originalImageUrl: string
@@ -255,7 +256,7 @@ export function GradCamViewer({
                 <span className="text-[9px] text-white/40">Reference image</span>
               </div>
               <div className="relative flex aspect-square w-full max-w-[480px] items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40">
-                <img
+                <SafeImage
                   src={originalImageUrl}
                   alt="Original Retinal Fundus"
                   style={{
@@ -264,6 +265,7 @@ export function GradCamViewer({
                     transition: "transform 0.15s ease-out",
                   }}
                   className="max-h-full max-w-full select-none object-contain"
+                  fallbackTitle="Retinal Fundus Unavailable"
                 />
               </div>
               <p className="mt-2 text-center text-[9px] text-white/50">
@@ -283,7 +285,7 @@ export function GradCamViewer({
               </div>
               <div className="relative flex aspect-square w-full max-w-[480px] items-center justify-center overflow-hidden rounded-xl border border-[#38bdf8]/30 bg-black/40">
                 {/* Base original image */}
-                <img
+                <SafeImage
                   src={originalImageUrl}
                   alt="Original fundus base"
                   style={{
@@ -292,10 +294,11 @@ export function GradCamViewer({
                     transition: "transform 0.15s ease-out",
                   }}
                   className="max-h-full max-w-full select-none object-contain"
+                  fallbackTitle="Fundus Base Layer Unavailable"
                 />
                 {/* Heatmap overlay image blended on top via dynamic opacity */}
                 {gradcamUrl && (
-                  <img
+                  <SafeImage
                     src={gradcamUrl}
                     alt="Grad-CAM Heatmap Overlay"
                     style={{
@@ -305,6 +308,7 @@ export function GradCamViewer({
                       transition: "opacity 0.1s linear, transform 0.15s ease-out",
                     }}
                     className="pointer-events-none absolute inset-0 m-auto max-h-full max-w-full select-none object-contain"
+                    fallbackTitle="Heatmap Overlay Pending"
                   />
                 )}
               </div>
@@ -326,7 +330,7 @@ export function GradCamViewer({
               </span>
             </div>
             <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/50">
-              <img
+              <SafeImage
                 src={originalImageUrl}
                 alt="Original Fundus base"
                 style={{
@@ -335,9 +339,10 @@ export function GradCamViewer({
                   transition: "transform 0.15s ease-out",
                 }}
                 className="max-h-full max-w-full select-none object-contain"
+                fallbackTitle="Original Fundus Unavailable"
               />
               {gradcamUrl && (
-                <img
+                <SafeImage
                   src={gradcamUrl}
                   alt="Grad-CAM Overlay"
                   style={{
@@ -347,6 +352,7 @@ export function GradCamViewer({
                     transition: "opacity 0.08s linear, transform 0.15s ease-out",
                   }}
                   className="pointer-events-none absolute inset-0 m-auto max-h-full max-w-full select-none object-contain"
+                  fallbackTitle="Overlay Map Unavailable"
                 />
               )}
             </div>
@@ -367,7 +373,7 @@ export function GradCamViewer({
               </span>
             </div>
             <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/50">
-              <img
+              <SafeImage
                 src={heatmapUrl || gradcamUrl || originalImageUrl}
                 alt="Grad-CAM Heatmap"
                 style={{
@@ -376,6 +382,7 @@ export function GradCamViewer({
                   transition: "transform 0.15s ease-out",
                 }}
                 className="max-h-full max-w-full select-none object-contain"
+                fallbackTitle="Heatmap Visualization Unavailable"
               />
             </div>
             <p className="mt-2 text-center text-[10px] text-white/60">

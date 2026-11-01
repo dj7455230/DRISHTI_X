@@ -3,9 +3,11 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
 import { useAuthStore, useNetworkStore } from "@/lib/store"
+import { healthApi } from "@/lib/api"
 import OfflineSyncModal from "@/components/OfflineSyncModal"
 
 import {
@@ -33,6 +35,7 @@ import {
   Network,
   Sparkles,
   HeartHandshake,
+  Microscope,
 } from "lucide-react"
 
 const demoNavigation = [
@@ -64,6 +67,12 @@ const clinicalNavigation = [
     href: "/eye-explorer",
     label: "3D Eye Explorer",
     icon: Cuboid,
+    highlight: true,
+  },
+  {
+    href: "/retina-diseases",
+    label: "3D Disease Explorer",
+    icon: Microscope,
     highlight: true,
   },
   {
@@ -228,6 +237,13 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const { user, logout } = useAuthStore()
   const { isOnline, pendingSyncCount } = useNetworkStore()
 
+  const { data: healthData, isError: isHealthError } = useQuery({
+    queryKey: ["backendHealthStatus"],
+    queryFn: () => healthApi.check().then((r) => r.data),
+    refetchInterval: 30000,
+    retry: 1,
+  })
+
   const initials =
     user?.full_name
       ?.split(" ")
@@ -334,7 +350,24 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       </nav>
 
       {/* Connectivity & Offline Sync Status */}
-      <div className="mx-4 mb-3 border-t border-white/5 pt-3">
+      <div className="mx-4 mb-3 border-t border-white/5 pt-3 space-y-2">
+        {/* Live Backend Service Health Indicator */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-[#101F30]/60 border border-white/5 text-[10px]">
+          <span className="text-[#9AAFC1] font-medium">FastAPI Engine:</span>
+          {isHealthError ? (
+            <span className="flex items-center gap-1.5 text-rose-400 font-bold">
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" /> Offline (Port 8000)
+            </span>
+          ) : healthData ? (
+            <span className="flex items-center gap-1.5 text-emerald-400 font-semibold font-mono">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              {healthData.status === "ok" ? "Connected" : "Degraded"}
+            </span>
+          ) : (
+            <span className="text-[#5A7184]">Checking...</span>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={() => setIsSyncModalOpen(true)}

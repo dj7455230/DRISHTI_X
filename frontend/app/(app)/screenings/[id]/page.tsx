@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useParams } from "next/navigation"
+import Link from "next/link"
 import {
   useMutation,
   useQuery,
@@ -46,9 +47,7 @@ import { GradCamViewer } from "@/components/GradCamViewer"
 import LesionViewer from "@/components/LesionViewer"
 import { LiveAnalysisModal } from "@/components/LiveAnalysisModal"
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:8000"
+import { getApiBaseUrl } from "@/lib/config"
 
 async function loadClinicalReport(id: string) {
   try {
@@ -132,12 +131,15 @@ function mediaUrl(path?: string | null) {
 
   if (
     path.startsWith("http://") ||
-    path.startsWith("https://")
+    path.startsWith("https://") ||
+    path.startsWith("data:") ||
+    path.startsWith("blob:")
   ) {
     return path
   }
 
-  return `${API_BASE}/${path.replace(/^\/+/, "")}`
+  const apiBase = getApiBaseUrl().replace(/\/$/, "")
+  return `${apiBase}/${path.replace(/^\/+/, "")}`
 }
 
 export default function ScreeningDetailPage() {
@@ -184,13 +186,12 @@ export default function ScreeningDetailPage() {
     data: report,
     isLoading,
     error,
+    refetch,
   } = useQuery({
     queryKey: ["screening-report", id],
-
-    queryFn: () =>
-      loadClinicalReport(id),
-
+    queryFn: () => loadClinicalReport(id),
     retry: false,
+    enabled: Boolean(id) && id !== "undefined",
   })
 
   const { data: referralData } = useQuery({
@@ -313,17 +314,67 @@ export default function ScreeningDetailPage() {
   }
 
   if (error || !report) {
+    const status = (error as any)?.response?.status
+    const errorDetail =
+      (error as any)?.response?.data?.detail || (error as any)?.message || ""
+    const isNotFound =
+      status === 404 ||
+      errorDetail.toLowerCase().includes("not found") ||
+      !id ||
+      id === "undefined"
+
     return (
-      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6">
+      <div className="max-w-2xl mx-auto my-12 p-8 rounded-2xl border border-white/10 bg-[#0B1522] text-center shadow-xl">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-amber-400">
+          <AlertCircle className="w-7 h-7" />
+        </div>
 
-        <p className="font-semibold text-rose-400">
-          Unable to load screening report
+        <h2 className="text-lg font-bold text-white mb-2">
+          {isNotFound
+            ? "Screening Examination Not Found"
+            : "Unable to Retrieve Screening Record"}
+        </h2>
+
+        <p className="text-xs text-[#9AAFC1] leading-relaxed max-w-lg mx-auto mb-6">
+          {isNotFound ? (
+            <>
+              No clinical screening case matching identifier{" "}
+              <span className="font-mono text-cyan-300 font-semibold">{id}</span>{" "}
+              was found in the active database. The record may have been archived,
+              or this case is still stored in an offline Primary Health Centre sync queue.
+            </>
+          ) : (
+            <>
+              {errorDetail ||
+                "A communication error occurred while attempting to contact the DRISHTI-X clinical backend."}
+            </>
+          )}
         </p>
 
-        <p className="mt-2 text-sm text-[#a96d68]">
-          Confirm that the backend service is running and try again.
-        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/screenings"
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#39D9D0] to-[#2BA8A1] text-[#07111F] text-xs font-bold hover:brightness-110 transition shadow-lg shadow-cyan-500/20"
+          >
+            Browse Screening Archive
+          </Link>
 
+          <Link
+            href="/screenings/new"
+            className="px-4 py-2.5 rounded-xl bg-[#102436] border border-[#39D9D0]/30 text-cyan-300 text-xs font-semibold hover:bg-[#152e45] transition"
+          >
+            Start New Screening
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs font-medium hover:bg-white/10 transition flex items-center gap-1.5"
+          >
+            <RefreshCcw className="w-3.5 h-3.5" />
+            Retry Query
+          </button>
+        </div>
       </div>
     )
   }
@@ -402,7 +453,7 @@ export default function ScreeningDetailPage() {
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
 
             <span className="font-mono text-[10px] text-teal-300 font-bold bg-teal-500/10 px-2.5 py-0.5 rounded border border-teal-500/20">
-              {screening.case_number || `DX-CASE-${(screening.id || id).slice(0, 8).toUpperCase()}`}
+              {screening.case_number || (screening.id || id ? `DX-CASE-${String(screening.id || id).slice(0, 8).toUpperCase()}` : "DX-CASE-UNKNOWN")}
             </span>
 
             {patient.patient_code && (
@@ -441,7 +492,7 @@ export default function ScreeningDetailPage() {
           </button>
 
           <a
-            href={`${API_BASE}/api/screenings/${id}/report/pdf`}
+            href={`${getApiBaseUrl()}/api/screenings/${id}/report/pdf`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-full border border-[#173f56] bg-[#173f56] px-4 py-2 text-[10px] font-semibold text-white shadow-sm transition hover:bg-[#102f42]"

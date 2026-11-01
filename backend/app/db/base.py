@@ -1,6 +1,7 @@
 """
 DRISHTI-X — SQLAlchemy Base + Engine
 """
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -26,8 +27,11 @@ try:
         with engine.connect() as conn:
             pass
 except Exception as e:
-    print(f"[DB] PostgreSQL unavailable ({e}). Falling back to SQLite local dev database (retinatrust.db).")
-    _sqlite_url = "sqlite:///./retinatrust.db"
+    # Resolve absolute path to retinatrust.db in project root so dev database is consistent
+    _project_root = Path(__file__).resolve().parent.parent.parent.parent
+    _sqlite_path = (_project_root / "retinatrust.db").resolve()
+    print(f"[DB] PostgreSQL unavailable ({e}). Falling back to SQLite local dev database ({_sqlite_path}).")
+    _sqlite_url = f"sqlite:///{_sqlite_path}"
     engine = create_engine(_sqlite_url, connect_args={"check_same_thread": False})
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

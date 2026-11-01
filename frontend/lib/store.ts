@@ -53,16 +53,31 @@ export const useAuthStore = create<AuthStore>()(
   )
 )
 
+export type BackendConnectionStatus = "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "RECOVERING"
+
 interface NetworkStore {
   isOnline: boolean
+  backendStatus: BackendConnectionStatus
+  lastCheckedAt: string | null
+  backendErrorDetail: string | null
   pendingSyncCount: number
   setOnline: (online: boolean) => void
+  setBackendStatus: (status: BackendConnectionStatus, detail?: string | null) => void
   setPendingSync: (count: number) => void
 }
 
 export const useNetworkStore = create<NetworkStore>((set) => ({
   isOnline: true,
+  backendStatus: "CONNECTING",
+  lastCheckedAt: null,
+  backendErrorDetail: null,
   pendingSyncCount: 0,
   setOnline: (isOnline) => set({ isOnline }),
+  setBackendStatus: (backendStatus, detail = null) =>
+    set({
+      backendStatus,
+      backendErrorDetail: detail,
+      lastCheckedAt: new Date().toISOString(),
+    }),
   setPendingSync: (pendingSyncCount) => set({ pendingSyncCount }),
 }))

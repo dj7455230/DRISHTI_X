@@ -99,7 +99,7 @@ export default function RegisterPage() {
         className="relative hidden min-h-screen overflow-hidden lg:flex"
         style={{
           backgroundImage:
-            "linear-gradient(135deg, rgba(10,34,52,0.95) 0%, rgba(17,54,72,0.84) 48%, rgba(42,104,108,0.55) 100%), url('/retina-login.jpg')",
+            "linear-gradient(135deg, rgba(10,34,52,0.95) 0%, rgba(17,54,72,0.84) 48%, rgba(42,104,108,0.55) 100%), url('/retina-login.png')",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}

@@ -25,6 +25,7 @@ import {
 import { screeningsApi, dashboardApi } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/lib/store"
+import { SafeImage } from "@/components/SafeImage"
 
 const ICDR_GRADES = [
   { grade: 0, label: "Grade 0: No Apparent DR", desc: "No microaneurysms or hemorrhages" },
@@ -151,10 +152,11 @@ export default function ExpertModePage() {
                   Raw Optical Fundus
                 </span>
                 <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black aspect-square flex items-center justify-center">
-                  <img
+                  <SafeImage
                     src={`/api/screenings/demo/sample-image-file/${sampleKey}`}
                     alt="Raw Fundus"
                     className="w-full h-full object-cover"
+                    fallbackTitle="Raw Fundus Loading"
                   />
                   <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-[10px] text-white font-mono">
                     Native Sensor View
@@ -168,10 +170,11 @@ export default function ExpertModePage() {
                   AI Explainability Overlays
                 </span>
                 <div className="relative rounded-xl overflow-hidden border border-cyan-500/30 bg-black aspect-square flex items-center justify-center">
-                  <img
+                  <SafeImage
                     src={`/api/screenings/demo/sample-image-file/${sampleKey}`}
                     alt="Augmented Fundus"
                     className="w-full h-full object-cover"
+                    fallbackTitle="Augmented View Loading"
                   />
 
                   {/* Grad-CAM Heatmap Simulation Overlay */}
