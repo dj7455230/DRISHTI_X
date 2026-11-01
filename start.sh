@@ -35,9 +35,9 @@ echo ""
 osascript <<EOF
 tell application "Terminal"
   -- Backend tab
-  do script "cd '$SCRIPT_DIR' && echo '=== DRISHTI-X BACKEND ===' && export PYTHONPATH=\"\$(pwd)/backend:\$(pwd)\" && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --app-dir backend"
+  do script "cd '$SCRIPT_DIR' && echo '=== DRISHTI-X BACKEND ===' && lsof -ti :8000 | xargs kill -9 2>/dev/null || true; python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
   -- Frontend tab
-  do script "cd '$SCRIPT_DIR/frontend' && echo '=== DRISHTI-X FRONTEND ===' && npm run dev"
+  do script "cd '$SCRIPT_DIR/frontend' && echo '=== DRISHTI-X FRONTEND ===' && lsof -ti :3000 | xargs kill -9 2>/dev/null || true; npm run dev"
 end tell
 EOF
 

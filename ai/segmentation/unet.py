@@ -73,8 +73,11 @@ class UNet(nn.Module):
         in_channels:  int = 3,
         out_channels: int = 4,
         features:     tuple = (64, 128, 256, 512),
+        n_classes:    Optional[int] = None,
     ):
         super().__init__()
+        if n_classes is not None:
+            out_channels = n_classes
         self.inc   = DoubleConv(in_channels, features[0])
         self.down1 = Down(features[0], features[1])
         self.down2 = Down(features[1], features[2])

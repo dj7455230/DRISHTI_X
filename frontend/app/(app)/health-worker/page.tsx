@@ -24,6 +24,7 @@ import {
 import { screeningsApi, patientsApi } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/lib/store"
+import { SafeImage } from "@/components/SafeImage"
 
 export default function HealthWorkerPage() {
   const { user } = useAuthStore()
@@ -309,10 +310,11 @@ export default function HealthWorkerPage() {
               {/* Preview Box */}
               <div className="mt-4 relative rounded-xl border border-dashed border-white/20 bg-black/40 overflow-hidden h-48 flex items-center justify-center">
                 {previewUrl ? (
-                  <img
+                  <SafeImage
                     src={previewUrl}
                     alt="Fundus Preview"
                     className="w-full h-full object-contain"
+                    fallbackTitle="Preview Unavailable"
                   />
                 ) : (
                   <label className="flex flex-col items-center justify-center cursor-pointer p-4 text-center">
@@ -375,7 +377,7 @@ export default function HealthWorkerPage() {
 
           {previewUrl && (
             <div className="rounded-xl overflow-hidden border border-white/10 max-w-xs mx-auto">
-              <img src={previewUrl} alt="Analyzed Fundus" className="w-full object-cover" />
+              <SafeImage src={previewUrl} alt="Analyzed Fundus" className="w-full object-cover" />
             </div>
           )}
 

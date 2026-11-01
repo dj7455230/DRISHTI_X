@@ -39,11 +39,12 @@ import {
   HelpCircle,
   Info,
 } from "lucide-react"
-import { cn, DR_GRADE_COLORS, DR_GRADE_LABELS, DR_GRADE_BG, formatConfidence, formatDate } from "@/lib/utils"
+import { cn, DR_GRADE_COLORS, DR_GRADE_LABELS, DR_GRADE_BG, formatConfidence, formatDate, formatApiErrorMessage } from "@/lib/utils"
 import { useAuthStore, useNetworkStore } from "@/lib/store"
 import { enqueue } from "@/lib/offlineQueue"
 import { GradCamViewer } from "@/components/GradCamViewer"
 import LesionViewer from "@/components/LesionViewer"
+import { SafeImage } from "@/components/SafeImage"
 
 // ─── Step Definition ────────────────────────────────────────────────────────
 type StepKey = "patient" | "medical" | "symptoms" | "upload" | "review" | "results"
@@ -99,81 +100,7 @@ const EYE_CONDITION_OPTIONS = [
 ]
 
 function formatApiError(error: any, fallback: string): string {
-  // 1. Client-side JavaScript Runtime / TypeError
-  if (error instanceof TypeError || (error instanceof Error && !("response" in error) && (error as any).name !== "AxiosError")) {
-    console.error("[Clinical Intake Diagnostic] Client Runtime Exception:", error.name, error.message)
-    return `Client processing error: ${error.message}. Please verify entered values and retry.`
-  }
-
-  // 2. Network / Offline / Timeout
-  if (error?.code === "ECONNABORTED" || error?.message?.includes("timeout")) {
-    console.warn("[Clinical Intake Diagnostic] Request Timeout: backend connection timed out.")
-    return "Server connection timed out (30s). Please check network connectivity and retry."
-  }
-  if (error?.message === "Network Error" || (!error?.response && error?.request)) {
-    console.warn("[Clinical Intake Diagnostic] Network unreachable at configured API URL.")
-    return "Backend service unavailable. Please ensure the DRISHTI-X backend server is running on http://localhost:8000."
-  }
-
-  // 3. HTTP Response Status Handling
-  const status = error?.response?.status
-  const data = error?.response?.data
-
-  // Safe developer diagnostic log (Correlation ID, HTTP status, endpoint; no PHI or credentials)
-  const correlationId = error?.response?.headers?.["x-request-id"] || `err_${Date.now()}`
-  console.error("[Clinical Intake Diagnostic]", {
-    correlationId,
-    endpoint: error?.config?.url,
-    method: error?.config?.method?.toUpperCase(),
-    status,
-    statusText: error?.response?.statusText,
-  })
-
-  // 401 Unauthorized
-  if (status === 401) {
-    return "Authentication required or session expired. Please log in again to register screenings."
-  }
-
-  // 403 Forbidden
-  if (status === 403) {
-    return "Access denied. Your role or facility account is not authorized to register screening cases."
-  }
-
-  // 404 Not Found
-  if (status === 404) {
-    if (typeof data?.detail === "string") return data.detail
-    return "Referenced patient or screening resource not found in database."
-  }
-
-  // 422 Unprocessable Entity (Validation)
-  if (status === 422) {
-    const detail = data?.detail
-    if (Array.isArray(detail) && detail.length > 0) {
-      const fieldErrors = detail.map((err: any) => {
-        const fieldName = Array.isArray(err?.loc) ? err.loc.filter((l: any) => l !== "body").join(".") : "field"
-        const msg = err?.msg || "Invalid format"
-        return `${fieldName}: ${msg}`
-      })
-      return `Invalid or incomplete required information — ${fieldErrors.join("; ")}`
-    }
-    if (typeof detail === "string") return `Validation error: ${detail}`
-    return "Invalid or incomplete clinical screening fields. Please verify required values."
-  }
-
-  // 500 Database / Internal Server Error
-  if (status === 500) {
-    if (typeof data?.detail === "string" && data.detail.length > 0) {
-      return `Database operation failed: ${data.detail}`
-    }
-    return "Database operation failed. The screening record could not be committed. Please retry safely."
-  }
-
-  // Generic data detail or message
-  if (typeof data?.detail === "string") return data.detail
-  if (typeof data?.message === "string") return data.message
-  if (typeof data === "string" && data.trim()) return data
-
-  return fallback
+  return formatApiErrorMessage(error, fallback)
 }
 
 function NewScreeningForm() {
@@ -202,15 +129,20 @@ function NewScreeningForm() {
     gender: "PREFER_NOT_TO_SAY",
     contactNumber: "",
     address: "",
+    pinCode: "",
+    preferredLanguage: "HINDI",
     district: currentUser?.facility_location || "Varanasi",
     state: "Uttar Pradesh",
     facilityCode: currentUser?.facility_name || "Rural Screening Centre",
 
     // Medical & Diabetes History
+    diabetesStatus: "YES",
     diabetesType: "TYPE_2",
     diabetesDuration: "",
     diabetesDurationUnknown: false,
     diabetesTreatment: "ORAL",
+    bloodPressure: "120/80 mmHg",
+    relevantMedications: "",
     hba1cValue: "",
     hba1cUnit: "%",
     hba1cDate: "",
@@ -228,6 +160,8 @@ function NewScreeningForm() {
     relevantEyeConditions: [] as string[],
     screeningPurpose: "ROUTINE_DR_SCREENING",
     referralSource: "SELF_REFERRAL",
+    referringDoctor: "",
+    consentStatus: "CONSENT_OBTAINED",
     facilityName: currentUser?.facility_name || "Primary Health Centre",
     operatorName: currentUser?.full_name || currentUser?.email || "Community Health Worker",
     clinicalNotes: "",
@@ -443,6 +377,11 @@ function NewScreeningForm() {
         facility_code: formData.facilityCode || currentUser?.facility_name || "Rural Screening Centre",
         district: formData.district || currentUser?.facility_location || "Varanasi",
         state: formData.state || "Uttar Pradesh",
+        pin_code: formData.pinCode || null,
+        preferred_language: formData.preferredLanguage || "HINDI",
+        diabetes_status: formData.diabetesStatus || "YES",
+        blood_pressure: formData.bloodPressure || null,
+        relevant_medications: formData.relevantMedications || null,
         notes: formData.clinicalNotes ? formData.clinicalNotes.trim() : null,
       }
 
@@ -460,11 +399,25 @@ function NewScreeningForm() {
           screening_purpose: formData.screeningPurpose,
           screening_notes: formData.clinicalNotes ? formData.clinicalNotes.trim() : null,
           referral_source: formData.referralSource,
+          referring_doctor: formData.referringDoctor ? formData.referringDoctor.trim() : null,
+          consent_status: formData.consentStatus || "CONSENT_OBTAINED",
           facility_name: formData.facilityName || currentUser?.facility_name || "Primary Health Centre",
           operator_name: formData.operatorName || currentUser?.full_name || currentUser?.email || "Community Health Worker",
         }
-        const scrRes = await screeningsApi.update(activeScreeningId, screeningUpdatePayload)
-        return { patientId: formData.patientId, screening: scrRes.data }
+        try {
+          const scrRes = await screeningsApi.update(activeScreeningId, screeningUpdatePayload)
+          return { patientId: formData.patientId, screening: scrRes.data }
+        } catch (scrUpdateErr: any) {
+          if (scrUpdateErr?.response?.status === 404) {
+            console.warn("[Screening Intake] Active screening ID was not found in DB (404). Clearing stale draft ID and proceeding to fresh intake.")
+            setActiveScreeningId("")
+            try {
+              localStorage.removeItem("drishti_screening_draft")
+            } catch {}
+          } else {
+            throw scrUpdateErr
+          }
+        }
       }
 
       // Fresh initialization: Attempt atomic intake in single database transaction
@@ -476,6 +429,8 @@ function NewScreeningForm() {
           screening_purpose: formData.screeningPurpose,
           screening_notes: formData.clinicalNotes ? formData.clinicalNotes.trim() : null,
           referral_source: formData.referralSource,
+          referring_doctor: formData.referringDoctor ? formData.referringDoctor.trim() : null,
+          consent_status: formData.consentStatus || "CONSENT_OBTAINED",
           facility_name: formData.facilityName || currentUser?.facility_name || "Primary Health Centre",
           operator_name: formData.operatorName || currentUser?.full_name || currentUser?.email || "Community Health Worker",
         }
@@ -553,7 +508,11 @@ function NewScreeningForm() {
       saveDraft()
     },
     onError: (e: any) => {
-      setError(formatApiError(e, "Retinal fundus image upload failed. Please verify format and size."))
+      if (e?.response?.status === 404) {
+        setError("Screening session expired or not found in database. Please click 'Previous' to re-verify patient details and initialize a fresh session.")
+      } else {
+        setError(formatApiError(e, "Retinal fundus image upload failed. Please verify format and size."))
+      }
     },
   })
 
@@ -611,7 +570,11 @@ function NewScreeningForm() {
       localStorage.removeItem("drishti_screening_draft")
     },
     onError: (e: any) => {
-      setError(formatApiError(e, "Screening inference could not be completed."))
+      if (e?.response?.status === 404) {
+        setError("Screening session expired or not found in database. Please return to Step 1 to initialize a fresh session.")
+      } else {
+        setError(formatApiError(e, "Screening inference could not be completed."))
+      }
     },
   })
 
@@ -1735,10 +1698,11 @@ function NewScreeningForm() {
                   {imagePreview ? (
                     <div className="flex flex-col items-center gap-3">
                       <div className="relative overflow-hidden rounded-full border-4 border-white shadow-md">
-                        <img
+                        <SafeImage
                           src={imagePreview}
                           alt="Retinal Preview"
                           className="h-44 w-44 object-cover"
+                          fallbackTitle="Preview Unavailable"
                         />
                       </div>
                       <div>
@@ -1804,10 +1768,11 @@ function NewScreeningForm() {
                     {imagePreview ? (
                       <div className="relative flex flex-col items-center gap-3">
                         <div className="relative overflow-hidden rounded-full border-4 border-[#39D9D0]/60 shadow-[0_0_25px_rgba(57,217,208,0.3)]">
-                          <img
+                          <SafeImage
                             src={imagePreview}
                             alt="Camera Viewfinder Retinal Capture"
                             className="h-44 w-44 object-cover"
+                            fallbackTitle="Viewfinder Capture Unavailable"
                           />
                           {/* Reticle Overlay */}
                           <div className="absolute inset-0 pointer-events-none flex items-center justify-center border-2 border-dashed border-[#39D9D0]/40 rounded-full">
@@ -2167,7 +2132,7 @@ function NewScreeningForm() {
                   </div>
                   <div className="flex items-center gap-3">
                     {imagePreview && (
-                      <img src={imagePreview} alt="Preview" className="h-12 w-12 rounded-full object-cover border" />
+                      <SafeImage src={imagePreview} alt="Preview" className="h-12 w-12 rounded-full object-cover border" containerClassName="h-12 w-12 shrink-0 rounded-full" />
                     )}
                     <div>
                       <p className="text-sm font-bold text-[#142e3b]">

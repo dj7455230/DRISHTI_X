@@ -137,10 +137,15 @@ def create_patient(
             visual_symptoms=payload.visual_symptoms,
             symptom_onset=payload.symptom_onset,
             pregnancy_status=payload.pregnancy_status,
+            diabetes_status=payload.diabetes_status,
+            blood_pressure=payload.blood_pressure,
+            relevant_medications=payload.relevant_medications,
             clinical_history=payload.clinical_history,
             facility_code=payload.facility_code or current_user.facility_name,
             district=payload.district or current_user.facility_location,
             state=payload.state,
+            pin_code=payload.pin_code,
+            preferred_language=payload.preferred_language or "HINDI",
             notes=payload.notes,
         )
         db.add(patient)

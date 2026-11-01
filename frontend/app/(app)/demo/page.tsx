@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { screeningsApi } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { SafeImage } from "@/components/SafeImage"
 import Link from "next/link"
 
 export default function JudgeDemoPage() {
@@ -38,7 +39,7 @@ export default function JudgeDemoPage() {
     queryFn: () => screeningsApi.getDemoScenarios().then((r) => r.data),
   })
 
-  const scenarios = scenariosData?.scenarios ?? {
+  const fallbackScenarios: Record<string, any> = {
     scenario_a: {
       name: "Scenario A: Standard Validated Workflow (Moderate NPDR)",
       code: "SCENARIO_A",
@@ -74,7 +75,75 @@ export default function JudgeDemoPage() {
     },
   }
 
-  const activeScenario = scenarios[selectedScenarioKey] || scenarios.scenario_a
+  // Normalize backend response (handles both array and object formats)
+  const scenarios: Record<string, any> = (() => {
+    if (!scenariosData?.scenarios) return fallbackScenarios
+
+    if (Array.isArray(scenariosData.scenarios)) {
+      const mapped: Record<string, any> = { ...fallbackScenarios }
+      for (const s of scenariosData.scenarios) {
+        const key =
+          s.scenario_key === "SCENARIO_A" || s.id?.includes("scenario_a")
+            ? "scenario_a"
+            : s.scenario_key === "SCENARIO_B" || s.id?.includes("scenario_b")
+            ? "scenario_b"
+            : s.scenario_key === "SCENARIO_C" || s.id?.includes("scenario_c")
+            ? "scenario_c"
+            : s.id || s.scenario_key
+
+        mapped[key] = {
+          name: s.title || s.name || fallbackScenarios[key]?.name || key,
+          code: s.scenario_key || s.code || key.toUpperCase(),
+          sample_image: s.sample_key || s.sample_image || "aptos_sample_1",
+          quality: s.expected_quality
+            ? {
+                status: s.expected_quality.status || "PASS",
+                score: s.expected_quality.sharpness_score || s.expected_quality.score || 0.85,
+                message: s.expected_quality.failure_reasons?.join("; ") || `${s.expected_quality.grade || "OPTIMAL"} quality`,
+              }
+            : fallbackScenarios[key]?.quality,
+          ai_prediction: s.expected_ai_output
+            ? {
+                grade: s.expected_ai_output.predicted_grade,
+                label: s.expected_ai_output.grade_name || s.expected_ai_output.status || "Evaluated",
+                confidence: s.expected_ai_output.confidence || 0.0,
+              }
+            : fallbackScenarios[key]?.ai_prediction,
+          lesions: s.expected_ai_output
+            ? {
+                ma_count: s.expected_ai_output.lesions ? s.expected_ai_output.lesions.length : null,
+                he_count: null,
+                ex_count: null,
+                concordance: s.expected_assurance?.concordance || (key === "scenario_b" ? "DISCORDANT" : "CONCORDANT"),
+              }
+            : fallbackScenarios[key]?.lesions,
+          priority: s.expected_priority
+            ? {
+                tier: s.expected_priority.level || "MEDIUM",
+                continuous_score: s.expected_priority.score || 50.0,
+                routing: s.expected_assurance?.routing || "Standard Queue",
+              }
+            : fallbackScenarios[key]?.priority,
+          assurance:
+            typeof s.expected_assurance === "string"
+              ? s.expected_assurance
+              : s.expected_assurance?.trigger_reason ||
+                s.expected_assurance?.actionable_feedback ||
+                `Assurance Decision: ${s.expected_assurance?.decision || "VALIDATED"}`,
+          learning_objective: s.learning_objective || fallbackScenarios[key]?.learning_objective || "",
+        }
+      }
+      return mapped
+    }
+
+    if (typeof scenariosData.scenarios === "object") {
+      return { ...fallbackScenarios, ...scenariosData.scenarios }
+    }
+
+    return fallbackScenarios
+  })()
+
+  const activeScenario = scenarios[selectedScenarioKey] || scenarios.scenario_a || fallbackScenarios.scenario_a
 
   // Reset Demo Sandbox
   const handleResetDemo = async () => {
@@ -187,9 +256,9 @@ export default function JudgeDemoPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
           <div>
             <span className="text-xs font-bold text-cyan-400 font-mono uppercase tracking-wider block">
-              {activeScenario.code}
+              {activeScenario?.code || "SCENARIO"}
             </span>
-            <h2 className="text-xl font-bold text-white mt-1">{activeScenario.name}</h2>
+            <h2 className="text-xl font-bold text-white mt-1">{activeScenario?.name}</h2>
           </div>
 
           <div className="flex items-center gap-3">
@@ -207,7 +276,7 @@ export default function JudgeDemoPage() {
           <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
           <div>
             <strong className="text-white block mb-0.5">Key Hackathon Evaluation Objective:</strong>
-            {activeScenario.learning_objective}
+            {activeScenario?.learning_objective}
           </div>
         </div>
 
@@ -222,19 +291,19 @@ export default function JudgeDemoPage() {
               <span
                 className={cn(
                   "px-2 py-0.5 rounded text-xs font-bold font-mono border",
-                  activeScenario.quality.status === "PASS"
+                  activeScenario?.quality?.status === "PASS"
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
                     : "bg-rose-500/20 text-rose-300 border-rose-500/30"
                 )}
               >
-                {activeScenario.quality.status}
+                {activeScenario?.quality?.status || "PASS"}
               </span>
               <span className="text-xs font-mono text-slate-300">
-                {(activeScenario.quality.score * 100).toFixed(0)}%
+                {((activeScenario?.quality?.score ?? 0.85) * 100).toFixed(0)}%
               </span>
             </div>
             <p className="text-[11px] text-slate-400 leading-snug">
-              {activeScenario.quality.message}
+              {activeScenario?.quality?.message || "Quality assessment passed"}
             </p>
           </div>
 
@@ -244,12 +313,12 @@ export default function JudgeDemoPage() {
               Stage 2: EfficientNet-B0
             </span>
             <div className="text-sm font-bold text-white">
-              {activeScenario.ai_prediction.label}
+              {activeScenario?.ai_prediction?.label || "Evaluated"}
             </div>
             <p className="text-[11px] text-slate-400">
               Confidence:{" "}
               <span className="font-mono text-cyan-300 font-bold">
-                {(activeScenario.ai_prediction.confidence * 100).toFixed(0)}%
+                {((activeScenario?.ai_prediction?.confidence ?? 0) * 100).toFixed(0)}%
               </span>
             </p>
           </div>
@@ -263,19 +332,19 @@ export default function JudgeDemoPage() {
               <span
                 className={cn(
                   "px-2 py-0.5 rounded text-xs font-bold font-mono border",
-                  activeScenario.lesions.concordance === "CONCORDANT"
+                  activeScenario?.lesions?.concordance === "CONCORDANT"
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                    : activeScenario.lesions.concordance === "DISCORDANT"
+                    : activeScenario?.lesions?.concordance === "DISCORDANT"
                     ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
                     : "bg-slate-700 text-slate-400 border-slate-600"
                 )}
               >
-                {activeScenario.lesions.concordance}
+                {activeScenario?.lesions?.concordance || "CONCORDANT"}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-mono">
-              {activeScenario.lesions.ma_count !== null
-                ? `MAs: ${activeScenario.lesions.ma_count} | HEs: ${activeScenario.lesions.he_count}`
+              {activeScenario?.lesions?.ma_count !== null && activeScenario?.lesions?.ma_count !== undefined
+                ? `MAs: ${activeScenario.lesions.ma_count} | HEs: ${activeScenario.lesions.he_count ?? 0}`
                 : "Lesion segmentation bypassed"}
             </p>
           </div>
@@ -289,21 +358,21 @@ export default function JudgeDemoPage() {
               <span
                 className={cn(
                   "px-2 py-0.5 rounded text-xs font-bold font-mono",
-                  activeScenario.priority.tier === "HIGH"
+                  activeScenario?.priority?.tier === "HIGH"
                     ? "bg-rose-500/20 text-rose-300"
-                    : activeScenario.priority.tier === "MEDIUM"
+                    : activeScenario?.priority?.tier === "MEDIUM"
                     ? "bg-amber-500/20 text-amber-300"
                     : "bg-blue-500/20 text-blue-300"
                 )}
               >
-                {activeScenario.priority.tier}
+                {activeScenario?.priority?.tier || "ROUTINE"}
               </span>
               <span className="text-xs font-mono text-slate-400">
-                Score: {activeScenario.priority.continuous_score}
+                Score: {activeScenario?.priority?.continuous_score ?? 0}
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              {activeScenario.priority.routing}
+              {activeScenario?.priority?.routing || "Standard Queue"}
             </p>
           </div>
         </div>
@@ -311,10 +380,12 @@ export default function JudgeDemoPage() {
         {/* Real Fundus Image & Assurance Banner */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
           <div className="rounded-xl overflow-hidden border border-white/10 bg-black aspect-video flex items-center justify-center">
-            <img
-              src={`/api/screenings/demo/sample-image-file/${activeScenario.sample_image}`}
+            <SafeImage
+              src={`/api/screenings/demo/sample-image-file/${activeScenario?.sample_image || "aptos_sample_1"}`}
               alt="Scenario Fundus"
               className="w-full h-full object-cover"
+              fallbackTitle="Scenario Image Loading"
+              fallbackSubtitle="Connecting to DRISHTI-X dataset repository"
             />
           </div>
 
@@ -325,7 +396,7 @@ export default function JudgeDemoPage() {
                 Clinical Assurance Engine Assessment:
               </span>
               <p className="text-xs text-slate-300 leading-relaxed">
-                {activeScenario.assurance}
+                {activeScenario?.assurance}
               </p>
             </div>
 

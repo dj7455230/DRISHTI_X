@@ -8,6 +8,7 @@ import Link from "next/link"
 
 import { screeningsApi } from "@/lib/api"
 import { LiveAnalysisModal } from "@/components/LiveAnalysisModal"
+import { SafeImage } from "@/components/SafeImage"
 import {
   formatDate,
   DR_GRADE_LABELS,
@@ -41,7 +42,7 @@ import {
   Check,
 } from "lucide-react"
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { getApiBaseUrl } from "@/lib/config"
 
 function AnalysisWorkspaceContent() {
   const searchParams = useSearchParams()
@@ -109,17 +110,18 @@ function AnalysisWorkspaceContent() {
   const prediction = screening?.prediction
   const patient = screening?.patient
 
+  const apiBase = getApiBaseUrl()
   const originalUrl = fundus?.original_path
-    ? `${API_BASE}/${fundus.original_path}`
+    ? `${apiBase}/${fundus.original_path.replace(/^\/+/, "")}`
     : null
   const enhancedUrl = fundus?.enhanced_path
-    ? `${API_BASE}/${fundus.enhanced_path}`
+    ? `${apiBase}/${fundus.enhanced_path.replace(/^\/+/, "")}`
     : null
   const gradcamUrl = prediction?.gradcam_path
-    ? `${API_BASE}/${prediction.gradcam_path}`
+    ? `${apiBase}/${prediction.gradcam_path.replace(/^\/+/, "")}`
     : null
   const lesionMaskUrl = prediction?.lesion_mask_path
-    ? `${API_BASE}/${prediction.lesion_mask_path}`
+    ? `${apiBase}/${prediction.lesion_mask_path.replace(/^\/+/, "")}`
     : null
 
   const predictedGrade = prediction?.predicted_grade ?? null
@@ -446,7 +448,7 @@ function AnalysisWorkspaceContent() {
                   <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white">
                     Original Fundus
                   </div>
-                  <img
+                  <SafeImage
                     src={originalUrl}
                     alt="Original Fundus"
                     className="max-h-full max-w-full object-contain pointer-events-none"
@@ -454,6 +456,7 @@ function AnalysisWorkspaceContent() {
                       transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       transition: isDragging ? "none" : "transform 0.15s ease-out",
                     }}
+                    fallbackTitle="Original Fundus Unavailable"
                   />
                 </div>
 
@@ -462,7 +465,7 @@ function AnalysisWorkspaceContent() {
                   <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-black/70 text-[10px] font-mono text-[#39D9D0]">
                     AI Evidence Layer
                   </div>
-                  <img
+                  <SafeImage
                     src={originalUrl}
                     alt="Base"
                     className="max-h-full max-w-full object-contain pointer-events-none opacity-40"
@@ -470,9 +473,10 @@ function AnalysisWorkspaceContent() {
                       transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       transition: isDragging ? "none" : "transform 0.15s ease-out",
                     }}
+                    fallbackTitle="Base Layer Unavailable"
                   />
                   {showGradCam && gradcamUrl && (
-                    <img
+                    <SafeImage
                       src={gradcamUrl}
                       alt="Grad-CAM"
                       className="absolute inset-0 m-auto max-h-full max-w-full object-contain pointer-events-none"
@@ -480,10 +484,11 @@ function AnalysisWorkspaceContent() {
                         opacity: gradCamOpacity / 100,
                         transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       }}
+                      fallbackTitle="Grad-CAM Unavailable"
                     />
                   )}
                   {showLesionMask && lesionMaskUrl && (
-                    <img
+                    <SafeImage
                       src={lesionMaskUrl}
                       alt="Lesion Mask"
                       className="absolute inset-0 m-auto max-h-full max-w-full object-contain pointer-events-none mix-blend-screen"
@@ -491,6 +496,7 @@ function AnalysisWorkspaceContent() {
                         opacity: lesionMaskOpacity / 100,
                         transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       }}
+                      fallbackTitle="Lesion Mask Unavailable"
                     />
                   )}
                 </div>
@@ -569,7 +575,7 @@ function AnalysisWorkspaceContent() {
               <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                 {/* Layer 1: Enhanced or Original Base Fundus */}
                 {showOriginal && (
-                  <img
+                  <SafeImage
                     src={showEnhanced && enhancedUrl ? enhancedUrl : originalUrl}
                     alt="Fundus Base Layer"
                     className="max-h-full max-w-full object-contain pointer-events-none"
@@ -577,12 +583,13 @@ function AnalysisWorkspaceContent() {
                       transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       transition: isDragging ? "none" : "transform 0.15s ease-out",
                     }}
+                    fallbackTitle="Fundus Base Layer Unavailable"
                   />
                 )}
 
                 {/* Layer 2: Grad-CAM Activation Heatmap */}
                 {showGradCam && gradcamUrl && (
-                  <img
+                  <SafeImage
                     src={gradcamUrl}
                     alt="Grad-CAM Activation"
                     className="absolute inset-0 m-auto max-h-full max-w-full object-contain pointer-events-none"
@@ -591,12 +598,13 @@ function AnalysisWorkspaceContent() {
                       transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       transition: isDragging ? "none" : "opacity 0.08s linear, transform 0.15s ease-out",
                     }}
+                    fallbackTitle="Grad-CAM Activation Unavailable"
                   />
                 )}
 
                 {/* Layer 3: U-Net Lesion Segmentation Overlay */}
                 {showLesionMask && lesionMaskUrl && (
-                  <img
+                  <SafeImage
                     src={lesionMaskUrl}
                     alt="Lesion Segmentation Overlay"
                     className="absolute inset-0 m-auto max-h-full max-w-full object-contain pointer-events-none mix-blend-screen"
@@ -605,6 +613,7 @@ function AnalysisWorkspaceContent() {
                       transform: `scale(${zoom}) rotate(${rotation}deg) translate(${pan.x}px, ${pan.y}px)`,
                       transition: isDragging ? "none" : "opacity 0.08s linear, transform 0.15s ease-out",
                     }}
+                    fallbackTitle="Lesion Mask Overlay Unavailable"
                   />
                 )}
               </div>

@@ -276,7 +276,7 @@ export default function PatientDetailPage() {
           <div className="space-y-2.5">
             {screenings.map((s: any) => {
               const isSelected = selectedForCompare.includes(s.id)
-              const caseNo = s.case_number || `DX-CASE-${s.id.slice(0, 8).toUpperCase()}`
+              const caseNo = s.case_number || (s.id ? `DX-CASE-${s.id.slice(0, 8).toUpperCase()}` : "DX-CASE-UNKNOWN")
               const priorityLevel = s.priority_level || "ROUTINE"
 
               return (

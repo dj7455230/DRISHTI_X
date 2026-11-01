@@ -31,11 +31,16 @@ class PatientCreate(BaseModel):
     visual_symptoms: Optional[List[str]] = None
     symptom_onset: Optional[str] = None
     pregnancy_status: Optional[str] = None
+    diabetes_status: Optional[str] = None
+    blood_pressure: Optional[str] = None
+    relevant_medications: Optional[str] = None
     clinical_history: Optional[Dict[str, Any]] = None
 
     facility_code: Optional[str] = None
     district: Optional[str] = None
     state: Optional[str] = None
+    pin_code: Optional[str] = None
+    preferred_language: Optional[str] = "HINDI"
     notes: Optional[str] = None
 
 
@@ -64,11 +69,16 @@ class PatientUpdate(BaseModel):
     visual_symptoms: Optional[List[str]] = None
     symptom_onset: Optional[str] = None
     pregnancy_status: Optional[str] = None
+    diabetes_status: Optional[str] = None
+    blood_pressure: Optional[str] = None
+    relevant_medications: Optional[str] = None
     clinical_history: Optional[Dict[str, Any]] = None
 
     facility_code: Optional[str] = None
     district: Optional[str] = None
     state: Optional[str] = None
+    pin_code: Optional[str] = None
+    preferred_language: Optional[str] = "HINDI"
     notes: Optional[str] = None
 
 
@@ -99,11 +109,16 @@ class PatientOut(BaseModel):
     visual_symptoms: Optional[List[str]] = None
     symptom_onset: Optional[str] = None
     pregnancy_status: Optional[str] = None
+    diabetes_status: Optional[str] = None
+    blood_pressure: Optional[str] = None
+    relevant_medications: Optional[str] = None
     clinical_history: Optional[Dict[str, Any]] = None
 
     facility_code: Optional[str] = None
     district: Optional[str] = None
     state: Optional[str] = None
+    pin_code: Optional[str] = None
+    preferred_language: Optional[str] = "HINDI"
     notes: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None

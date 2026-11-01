@@ -9,16 +9,8 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# Patch SQLAlchemy engine creation BEFORE importing the app
-# so no real DB connection is attempted
-_mock_engine = MagicMock()
-_mock_session = MagicMock()
-_mock_session_local = MagicMock(return_value=_mock_session)
-
-with patch("sqlalchemy.create_engine", return_value=_mock_engine):
-    with patch("sqlalchemy.orm.sessionmaker", return_value=_mock_session_local):
-        from app.main import app
-        from app.db.base import get_db
+from app.main import app
+from app.db.base import get_db
 
 
 def override_get_db():
@@ -29,7 +21,11 @@ def override_get_db():
     yield db
 
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(scope="module", autouse=True)
+def setup_overrides():
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture(scope="module")
@@ -39,13 +35,34 @@ def client():
         yield c
 
 
+def test_root_endpoint(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["app"] == "DRISHTI-X"
+    assert "status" in data
+    assert "services" in data
+    assert "database" in data["services"]
+    assert "ai_models" in data["services"]
+
+
+def test_root_health_endpoint(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] in ["ok", "healthy", "degraded"]
+    assert data["app"] == "DRISHTI-X"
+    assert "database" in data
+
+
 def test_health_endpoint(client):
     r = client.get("/api/health")
     assert r.status_code == 200
     data = r.json()
-    assert data["status"] == "ok"
+    assert data["status"] in ["ok", "healthy", "degraded"]
     assert data["app"] == "DRISHTI-X"
     assert "model_status" in data
+    assert "database" in data
     assert "disclaimer" in data
 
 

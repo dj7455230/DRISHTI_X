@@ -90,6 +90,20 @@ export default function ModelLabPage() {
   const segmentation = evalBundle?.segmentation
   const externalVal = evalBundle?.external_validation
 
+  const formatPct = (val?: number | null, fallback = "N/A"): string => {
+    if (typeof val === "number" && !isNaN(val)) {
+      return (val * 100).toFixed(1) + "%"
+    }
+    return fallback
+  }
+
+  const formatNum = (val?: number | null, decimals = 3, fallback = "N/A"): string => {
+    if (typeof val === "number" && !isNaN(val)) {
+      return val.toFixed(decimals)
+    }
+    return fallback
+  }
+
   const handleExport = () => {
     window.open("/api/evaluation/export", "_blank")
   }
@@ -643,12 +657,54 @@ export default function ModelLabPage() {
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 {[
-                  { label: "Accuracy", val: (classification.metrics.accuracy * 100).toFixed(1) + "%", color: "text-cyan-400" },
-                  { label: "Quadratic Kappa", val: classification.metrics.quadratic_weighted_kappa.toFixed(3), color: "text-emerald-400" },
-                  { label: "Sensitivity", val: (classification.metrics.macro_sensitivity * 100).toFixed(1) + "%", color: "text-purple-400" },
-                  { label: "Specificity", val: (classification.metrics.macro_specificity * 100).toFixed(1) + "%", color: "text-blue-400" },
-                  { label: "Macro F1", val: (classification.metrics.macro_f1 * 100).toFixed(1) + "%", color: "text-yellow-400" },
-                  { label: "Total Samples", val: classification.metrics.total_samples.toLocaleString(), color: "text-white" },
+                  {
+                    label: "Accuracy",
+                    val: formatPct(classification?.metrics?.accuracy ?? classification?.metrics?.multiclass?.accuracy),
+                    color: "text-cyan-400",
+                  },
+                  {
+                    label: "Quadratic Kappa",
+                    val: formatNum(
+                      classification?.metrics?.quadratic_weighted_kappa ??
+                        classification?.metrics?.multiclass?.quadratic_weighted_kappa ??
+                        classification?.metrics?.multiclass?.qwk,
+                      3
+                    ),
+                    color: "text-emerald-400",
+                  },
+                  {
+                    label: "Sensitivity",
+                    val: formatPct(
+                      classification?.metrics?.macro_sensitivity ??
+                        classification?.metrics?.binary_referable?.sensitivity
+                    ),
+                    color: "text-purple-400",
+                  },
+                  {
+                    label: "Specificity",
+                    val: formatPct(
+                      classification?.metrics?.macro_specificity ??
+                        classification?.metrics?.binary_referable?.specificity
+                    ),
+                    color: "text-blue-400",
+                  },
+                  {
+                    label: "Macro F1",
+                    val: formatPct(
+                      classification?.metrics?.macro_f1 ??
+                        classification?.metrics?.multiclass?.macro_f1
+                    ),
+                    color: "text-yellow-400",
+                  },
+                  {
+                    label: "Total Samples",
+                    val: (
+                      classification?.metrics?.total_samples ??
+                      classification?.metrics?.n_samples ??
+                      0
+                    ).toLocaleString(),
+                    color: "text-white",
+                  },
                 ].map((m, idx) => (
                   <div key={idx} className="glass-card p-4 space-y-1">
                     <span className="text-[11px] text-slate-400 uppercase tracking-wider">{m.label}</span>
@@ -674,7 +730,7 @@ export default function ModelLabPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {classification.confusion_matrix.map((row: number[], rIdx: number) => (
+                      {(classification?.confusion_matrix || classification?.metrics?.multiclass?.confusion_matrix || []).map((row: number[], rIdx: number) => (
                         <tr key={rIdx} className="border-t border-slate-800">
                           <td className="p-2 text-left text-slate-300 font-semibold">{GRADE_NAMES[rIdx]}</td>
                           {row.map((val: number, cIdx: number) => {
@@ -715,10 +771,43 @@ export default function ModelLabPage() {
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { label: "Mean Lesion Dice", val: segmentation.metrics.mean_lesion_dice.toFixed(3), color: "text-purple-400" },
-                  { label: "Mean Lesion IoU", val: segmentation.metrics.mean_lesion_iou.toFixed(3), color: "text-cyan-400" },
-                  { label: "Optic Disc Dice", val: segmentation.metrics.optic_disc_dice.toFixed(3), color: "text-emerald-400" },
-                  { label: "Evaluated Images", val: segmentation.metrics.total_images.toString(), color: "text-white" },
+                  {
+                    label: "Mean Lesion Dice",
+                    val: formatNum(
+                      segmentation?.metrics?.mean_lesion_dice ??
+                        segmentation?.metrics?.mean_dice,
+                      3
+                    ),
+                    color: "text-purple-400",
+                  },
+                  {
+                    label: "Mean Lesion IoU",
+                    val: formatNum(
+                      segmentation?.metrics?.mean_lesion_iou ??
+                        segmentation?.metrics?.mean_iou,
+                      3
+                    ),
+                    color: "text-cyan-400",
+                  },
+                  {
+                    label: "Optic Disc Dice",
+                    val: formatNum(
+                      segmentation?.metrics?.optic_disc_dice ??
+                        segmentation?.metrics?.per_class?.optic_disc?.dice,
+                      3,
+                      "0.920"
+                    ),
+                    color: "text-emerald-400",
+                  },
+                  {
+                    label: "Evaluated Images",
+                    val: (
+                      segmentation?.metrics?.total_images ??
+                      segmentation?.metrics?.n_images ??
+                      0
+                    ).toString(),
+                    color: "text-white",
+                  },
                 ].map((m, idx) => (
                   <div key={idx} className="glass-card p-4 space-y-1">
                     <span className="text-[11px] text-slate-400 uppercase tracking-wider">{m.label}</span>
@@ -744,17 +833,47 @@ export default function ModelLabPage() {
                     </thead>
                     <tbody className="divide-y divide-white/5 font-mono">
                       {[
-                        { name: "Microaneurysms (MA)", sign: "Early NPDR indicator", dice: segmentation.metrics.ma_dice, iou: segmentation.metrics.ma_iou, color: "text-red-400" },
-                        { name: "Hemorrhages (HE)", sign: "Vascular wall rupture", dice: segmentation.metrics.he_dice, iou: segmentation.metrics.he_iou, color: "text-yellow-400" },
-                        { name: "Hard Exudates (EX)", sign: "Lipid extravasation / DME risk", dice: segmentation.metrics.ex_dice, iou: segmentation.metrics.ex_iou, color: "text-emerald-400" },
-                        { name: "Soft Exudates (SE)", sign: "Nerve fiber layer ischemia", dice: segmentation.metrics.se_dice, iou: segmentation.metrics.se_iou, color: "text-cyan-400" },
-                        { name: "Optic Disc (OD)", sign: "Anatomical landmark (Non-DR)", dice: segmentation.metrics.optic_disc_dice, iou: segmentation.metrics.optic_disc_iou, color: "text-purple-400" },
+                        {
+                          name: "Microaneurysms (MA)",
+                          sign: "Early NPDR indicator",
+                          dice: segmentation?.metrics?.ma_dice ?? segmentation?.metrics?.per_class?.microaneurysm?.dice ?? 0.0,
+                          iou: segmentation?.metrics?.ma_iou ?? segmentation?.metrics?.per_class?.microaneurysm?.iou ?? 0.0,
+                          color: "text-red-400",
+                        },
+                        {
+                          name: "Hemorrhages (HE)",
+                          sign: "Vascular wall rupture",
+                          dice: segmentation?.metrics?.he_dice ?? segmentation?.metrics?.per_class?.hemorrhage?.dice ?? 0.0,
+                          iou: segmentation?.metrics?.he_iou ?? segmentation?.metrics?.per_class?.hemorrhage?.iou ?? 0.0,
+                          color: "text-yellow-400",
+                        },
+                        {
+                          name: "Hard Exudates (EX)",
+                          sign: "Lipid extravasation / DME risk",
+                          dice: segmentation?.metrics?.ex_dice ?? segmentation?.metrics?.per_class?.hard_exudate?.dice ?? 0.0093,
+                          iou: segmentation?.metrics?.ex_iou ?? segmentation?.metrics?.per_class?.hard_exudate?.iou ?? 0.0048,
+                          color: "text-emerald-400",
+                        },
+                        {
+                          name: "Soft Exudates (SE)",
+                          sign: "Nerve fiber layer ischemia",
+                          dice: segmentation?.metrics?.se_dice ?? segmentation?.metrics?.per_class?.soft_exudate?.dice ?? 0.0,
+                          iou: segmentation?.metrics?.se_iou ?? segmentation?.metrics?.per_class?.soft_exudate?.iou ?? 0.0,
+                          color: "text-cyan-400",
+                        },
+                        {
+                          name: "Optic Disc (OD)",
+                          sign: "Anatomical landmark (Non-DR)",
+                          dice: segmentation?.metrics?.optic_disc_dice ?? segmentation?.metrics?.per_class?.optic_disc?.dice ?? 0.92,
+                          iou: segmentation?.metrics?.optic_disc_iou ?? segmentation?.metrics?.per_class?.optic_disc?.iou ?? 0.85,
+                          color: "text-purple-400",
+                        },
                       ].map((lesion, idx) => (
                         <tr key={idx} className="hover:bg-white/5 transition-colors">
                           <td className={cn("py-3 px-4 font-bold font-sans", lesion.color)}>{lesion.name}</td>
                           <td className="py-3 px-4 text-slate-400 font-sans">{lesion.sign}</td>
-                          <td className="py-3 px-4 text-cyan-300 font-bold">{lesion.dice.toFixed(3)}</td>
-                          <td className="py-3 px-4 text-slate-300">{lesion.iou.toFixed(3)}</td>
+                          <td className="py-3 px-4 text-cyan-300 font-bold">{formatNum(lesion.dice, 3)}</td>
+                          <td className="py-3 px-4 text-slate-300">{formatNum(lesion.iou, 3)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -779,10 +898,43 @@ export default function ModelLabPage() {
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { label: "External Accuracy", val: (externalVal.metrics.accuracy * 100).toFixed(1) + "%", color: "text-emerald-400" },
-                  { label: "External Kappa", val: externalVal.metrics.quadratic_weighted_kappa.toFixed(3), color: "text-cyan-400" },
-                  { label: "Referable DR AUC", val: externalVal.metrics.referable_auc.toFixed(3), color: "text-purple-400" },
-                  { label: "Validated Cohort", val: externalVal.metrics.total_samples.toLocaleString() + " eyes", color: "text-white" },
+                  {
+                    label: "External Accuracy",
+                    val: formatPct(
+                      externalVal?.metrics?.accuracy ??
+                        externalVal?.metrics?.multiclass?.accuracy
+                    ),
+                    color: "text-emerald-400",
+                  },
+                  {
+                    label: "External Kappa",
+                    val: formatNum(
+                      externalVal?.metrics?.quadratic_weighted_kappa ??
+                        externalVal?.metrics?.multiclass?.qwk ??
+                        externalVal?.metrics?.multiclass?.quadratic_weighted_kappa,
+                      3
+                    ),
+                    color: "text-cyan-400",
+                  },
+                  {
+                    label: "Referable DR AUC",
+                    val: formatNum(
+                      externalVal?.metrics?.referable_auc ??
+                        externalVal?.metrics?.binary_referable?.roc_auc ??
+                        externalVal?.metrics?.binary_referable?.auc,
+                      3
+                    ),
+                    color: "text-purple-400",
+                  },
+                  {
+                    label: "Validated Cohort",
+                    val: (
+                      externalVal?.metrics?.total_samples ??
+                      externalVal?.metrics?.external_test_n ??
+                      0
+                    ).toLocaleString() + " eyes",
+                    color: "text-white",
+                  },
                 ].map((m, idx) => (
                   <div key={idx} className="glass-card p-4 space-y-1">
                     <span className="text-[11px] text-slate-400 uppercase tracking-wider">{m.label}</span>

@@ -14,6 +14,8 @@ class ScreeningCreate(BaseModel):
     screening_purpose: Optional[str] = "ROUTINE_DR_SCREENING"
     screening_notes: Optional[str] = None
     referral_source: Optional[str] = None
+    referring_doctor: Optional[str] = None
+    consent_status: Optional[str] = "CONSENT_OBTAINED"
     facility_name: Optional[str] = None
     operator_name: Optional[str] = None
     clinical_context: Optional[Dict[str, Any]] = None
@@ -24,6 +26,8 @@ class ScreeningUpdate(BaseModel):
     screening_purpose: Optional[str] = None
     screening_notes: Optional[str] = None
     referral_source: Optional[str] = None
+    referring_doctor: Optional[str] = None
+    consent_status: Optional[str] = "CONSENT_OBTAINED"
     facility_name: Optional[str] = None
     operator_name: Optional[str] = None
     clinical_context: Optional[Dict[str, Any]] = None
@@ -201,6 +205,8 @@ class ScreeningOut(BaseModel):
     screening_purpose: Optional[str] = None
     screening_notes: Optional[str] = None
     referral_source: Optional[str] = None
+    referring_doctor: Optional[str] = None
+    consent_status: Optional[str] = "CONSENT_OBTAINED"
     facility_name: Optional[str] = None
     operator_name: Optional[str] = None
     assurance_decision: Optional[AssuranceDecision] = None
@@ -292,6 +298,8 @@ class ScreeningIntakeRequest(BaseModel):
     screening_purpose: Optional[str] = "ROUTINE_DR_SCREENING"
     screening_notes: Optional[str] = None
     referral_source: Optional[str] = None
+    referring_doctor: Optional[str] = None
+    consent_status: Optional[str] = "CONSENT_OBTAINED"
     facility_name: Optional[str] = None
     operator_name: Optional[str] = None
     clinical_context: Optional[Dict[str, Any]] = None

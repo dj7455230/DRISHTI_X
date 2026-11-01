@@ -17,6 +17,7 @@ import {
   Split,
   EyeOff,
 } from "lucide-react"
+import { SafeImage } from "@/components/SafeImage"
 
 interface SideBySideProps {
   originalUrl?: string | null
@@ -491,29 +492,32 @@ export default function SideBySideExplainability({
             onMouseLeave={handleMouseLeave}
           >
             {originalUrl && (
-              <img
+              <SafeImage
                 src={originalUrl}
                 alt="Original Fundus"
                 className="w-full h-full object-contain pointer-events-none"
                 draggable={false}
+                fallbackTitle="Original Fundus Unavailable"
               />
             )}
             {gradcamHeatmapUrl && (
-              <img
+              <SafeImage
                 src={gradcamHeatmapUrl}
                 alt="Grad-CAM Heatmap"
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none mix-blend-screen"
                 style={{ opacity: (opacity / 100) * 0.6 }}
                 draggable={false}
+                fallbackTitle="Heatmap Unavailable"
               />
             )}
             {lesionMaskUrl && (
-              <img
+              <SafeImage
                 src={lesionMaskUrl}
                 alt="Lesion Segmentation Mask"
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                 style={{ opacity: opacity / 100 }}
                 draggable={false}
+                fallbackTitle="Lesion Mask Unavailable"
               />
             )}
           </div>

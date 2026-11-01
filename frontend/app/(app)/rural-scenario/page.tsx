@@ -129,8 +129,14 @@ export default function RuralScenarioDemoPage() {
         visual_acuity_right: "6/24",
       })
 
-      setActiveCaseId(intakeRes.data.id)
-      setCaseNumber(intakeRes.data.case_number || `CASE-${intakeRes.data.id.slice(0, 8)}`)
+      const screening = intakeRes.data?.screening || intakeRes.data
+      const screeningId = screening?.id || ""
+      const caseNum =
+        screening?.case_number ||
+        (screeningId ? `CASE-${screeningId.slice(0, 8)}` : `CASE-RURAL-${Date.now().toString().slice(-4)}`)
+
+      setActiveCaseId(screeningId)
+      setCaseNumber(caseNum)
       setCurrentStep(2)
     } catch (e: any) {
       console.error(e)
